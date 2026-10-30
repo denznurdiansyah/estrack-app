@@ -7,7 +7,13 @@
   "theme_color": "#0F1115",
   "icons": [
     {
-      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Electrolux_Logo.svg/512px-Electrolux_Logo.svg.png",
+      "src": "./electrolux.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./electrolux.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
