@@ -175,6 +175,10 @@ textarea{resize:vertical;min-height:80px}
     <button data-filter="sudah" onclick="setCustFilter('sudah')">Sudah Follow Up</button>
     <button data-filter="electrolux" onclick="setCustFilter('electrolux')">Beli Electrolux</button>
   </div>
+  
+  <!-- TOMBOL TAMBAH CUSTOMER MANUAL -->
+  <button class="btn primary mb" onclick="openCustomerModal()">➕ Tambah Customer (Prospek)</button>
+  
   <div id="cust-list"></div>
 </section>
 
@@ -222,7 +226,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="muted">Total data lokal:</div>
     <div class="mt" style="font-size:13px" id="data-stats"></div>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON ke Download</button>
-    <div class="muted mt" style="font-size:11px">Versi 1.0 · ESTrack · Dibuat untuk Electronic Square Sukabumi</div>
+    <div class="muted mt" style="font-size:11px">Versi 1.1 · ESTrack · Dibuat untuk Electronic Square Sukabumi</div>
   </div>
 </section>
 
@@ -234,6 +238,7 @@ textarea{resize:vertical;min-height:80px}
   <button class="nav-btn" data-tab="settings" onclick="navigateTo('settings')"><span class="ic">⚙️</span>Setting</button>
 </nav>
 
+<!-- MODAL SALE -->
 <div class="modal" id="modal-sale" onclick="closeModalOnBg(event,'modal-sale')">
   <div class="modal-body" onclick="event.stopPropagation()">
     <div class="modal-head">
@@ -352,6 +357,7 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 
+<!-- MODAL PRODUCT -->
 <div class="modal" id="modal-product" onclick="closeModalOnBg(event,'modal-product')">
   <div class="modal-body" onclick="event.stopPropagation()">
     <div class="modal-head">
@@ -394,6 +400,55 @@ textarea{resize:vertical;min-height:80px}
       </div>
       <button class="btn primary" onclick="saveProduct()">💾 Simpan</button>
       <button class="btn danger mt" id="prod-delete-btn" style="display:none" onclick="deleteProduct()">🗑️ Hapus Produk</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CUSTOMER BARU -->
+<div class="modal" id="modal-customer" onclick="closeModalOnBg(event,'modal-customer')">
+  <div class="modal-body" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h2 id="cust-modal-title">Tambah Customer</h2>
+      <button class="icon-btn" onclick="closeModal('modal-customer')">✕</button>
+    </div>
+    <div class="modal-content">
+      <input type="hidden" id="cust-id">
+      <div class="field">
+        <label>Nama Customer <span style="color:red">*</span></label>
+        <input id="cust-nama" placeholder="Nama lengkap">
+      </div>
+      <div class="field">
+        <label>No HP <span style="color:red">*</span></label>
+        <input id="cust-hp" type="tel" inputmode="tel" placeholder="08xxxxxxxxxx">
+      </div>
+      <div class="field">
+        <label>Alamat (opsional)</label>
+        <input id="cust-alamat" placeholder="Alamat customer">
+      </div>
+      <div class="field">
+        <label>Brand yang Diminati</label>
+        <select id="cust-brand-diminati">
+          <option value="">- Pilih Brand -</option>
+          <option value="Electrolux">Electrolux</option>
+          <option value="LG">LG</option>
+          <option value="Toshiba">Toshiba</option>
+          <option value="Samsung">Samsung</option>
+          <option value="Sharp">Sharp</option>
+          <option value="Polytron">Polytron</option>
+          <option value="Lain-lain">Lain-lain</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Produk yang Diminati (opsional)</label>
+        <input id="cust-produk-diminati" placeholder="Contoh: Kulkas 2 Pintu">
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cust-sudah-beli" style="width:auto;accent-color:#1E90FF">
+          <span>Sudah beli Electrolux?</span>
+        </label>
+      </div>
+      <button class="btn primary" onclick="saveCustomer()">💾 Simpan Customer</button>
     </div>
   </div>
 </div>
@@ -511,7 +566,6 @@ async function syncAll(silent=false){
 
     const data=await callApi('getAll');
     
-    // CLEAR LOCAL DB agar sesuai dengan Sheets
     const clearStore = (store) => new Promise((res, rej) => {
       const req = tx(store,'readwrite').clear();
       req.onsuccess = () => res();
@@ -531,7 +585,6 @@ async function syncAll(silent=false){
       followup:(data.followup||[]).map(f=>({...f,_synced:true}))
     };
 
-    // Masukkan data dari Sheets + data yang belum tersinkron
     await Promise.all([
       idbBulkPut('sales',mapped.sales.concat(state.sales.filter(x=>!x._synced))),
       idbBulkPut('customers',mapped.customers.concat(state.customers.filter(x=>!x._synced))),
@@ -630,7 +683,6 @@ function renderDashboard(){
     </div>
   `;
 
-  // Render Riwayat Transaksi
   const mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   const histEl = document.getElementById('dash-history');
   if(mySales.length === 0){
@@ -928,14 +980,92 @@ function renderCustomers(){
   }).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   const el=document.getElementById('cust-list');
   if(!list.length){
-    el.innerHTML='<div class="empty"><div class="em">👥</div><div>Belum ada customer</div><div class="mt muted">Data customer otomatis tersimpan saat input penjualan</div></div>';
+    el.innerHTML='<div class="empty"><div class="em">👥</div><div>Belum ada customer</div><div class="mt muted">Tap tombol di atas untuk menambah</div></div>';
     return;
   }
   el.innerHTML=list.map(c=>{
     const isSudah=c.statusFollowUp==='sudah';
-    return `<div class="item"><div class="item-icon">👤</div><div class="item-body"><div class="item-title">${esc(c.nama)} <span class="badge ${isSudah?'sudah':'belum'}">${isSudah?'Sudah FU':'Belum FU'}</span></div><div class="item-sub">${esc(c.noHP)}${c.brandDiminati?' · '+esc(c.brandDiminati):''}${c.produkDiminati?' · '+esc(c.produkDiminati):''}</div>${c.sudahBeliElectrolux?'<div class="mt"><span class="badge electrolux">✓ Sudah beli Electrolux</span></div>':''}</div><button class="icon-btn wa" onclick="event.stopPropagation();openWA('${c.id}')" title="WhatsApp">💬</button></div>`;
+    return `<div class="item">
+      <div class="item-icon" onclick="openCustomerModal('${c.id}')" style="cursor:pointer">👤</div>
+      <div class="item-body" onclick="openCustomerModal('${c.id}')" style="cursor:pointer">
+        <div class="item-title">${esc(c.nama)} <span class="badge ${isSudah?'sudah':'belum'}">${isSudah?'Sudah FU':'Belum FU'}</span></div>
+        <div class="item-sub">${esc(c.noHP)}${c.brandDiminati?' · '+esc(c.brandDiminati):''}${c.produkDiminati?' · '+esc(c.produkDiminati):''}</div>
+        ${c.sudahBeliElectrolux?'<div class="mt"><span class="badge electrolux">✓ Sudah beli Electrolux</span></div>':''}
+      </div>
+      <button class="icon-btn wa" onclick="event.stopPropagation();openWA('${c.id}')" title="WhatsApp">💬</button>
+    </div>`;
   }).join('');
 }
+
+function openCustomerModal(id){
+  if(id){
+    const c=state.customers.find(x=>x.id===id);
+    if(!c) return;
+    document.getElementById('cust-modal-title').textContent='Edit Customer';
+    document.getElementById('cust-id').value=c.id;
+    document.getElementById('cust-nama').value=c.nama||'';
+    document.getElementById('cust-hp').value=c.noHP||'';
+    document.getElementById('cust-alamat').value=c.alamat||'';
+    document.getElementById('cust-brand-diminati').value=c.brandDiminati||'';
+    document.getElementById('cust-produk-diminati').value=c.produkDiminati||'';
+    document.getElementById('cust-sudah-beli').checked=c.sudahBeliElectrolux;
+  } else {
+    document.getElementById('cust-modal-title').textContent='Tambah Customer (Prospek)';
+    document.getElementById('cust-id').value='';
+    document.getElementById('cust-nama').value='';
+    document.getElementById('cust-hp').value='';
+    document.getElementById('cust-alamat').value='';
+    document.getElementById('cust-brand-diminati').value='';
+    document.getElementById('cust-produk-diminati').value='';
+    document.getElementById('cust-sudah-beli').checked=false;
+  }
+  openModal('modal-customer');
+}
+
+async function saveCustomer(){
+  const id=document.getElementById('cust-id').value;
+  const nama=document.getElementById('cust-nama').value.trim();
+  const hp=document.getElementById('cust-hp').value.trim();
+  const alamat=document.getElementById('cust-alamat').value.trim();
+  const brandDiminati=document.getElementById('cust-brand-diminati').value;
+  const produkDiminati=document.getElementById('cust-produk-diminati').value.trim();
+  const sudahBeli=document.getElementById('cust-sudah-beli').checked;
+
+  if(!nama){toast('Nama wajib diisi','error');return;}
+  if(!hp){toast('No HP wajib diisi','error');return;}
+
+  const normPhone=normalizePhone(hp);
+
+  if(id){
+    const c=state.customers.find(x=>x.id===id);
+    if(c){
+      c.nama=nama; c.noHP=normPhone; c.alamat=alamat;
+      c.brandDiminati=brandDiminati; c.produkDiminati=produkDiminati;
+      c.sudahBeliElectrolux=sudahBeli;
+      c._synced=false;
+      await idbPut('customers',c);
+    }
+  } else {
+    if(state.customers.find(c=>normalizePhone(c.noHP)===normPhone)){
+      toast('No HP sudah terdaftar','error');return;
+    }
+    const newC={
+      id:uuid(), nama:nama, noHP:normPhone, alamat:alamat,
+      brandDiminati:brandDiminati, produkDiminati:produkDiminati,
+      statusFollowUp:'belum', terakhirFollowUp:'',
+      sudahBeliElectrolux:sudahBeli, createdAt:new Date().toISOString(),
+      _synced:false
+    };
+    await idbPut('customers',newC);
+  }
+
+  await loadLocal();
+  closeModal('modal-customer');
+  toast(navigator.onLine?'✅ Customer tersimpan':'💾 Disimpan offline','success');
+  renderCustomers();
+  if(navigator.onLine) syncAll(true);
+}
+
 async function openWA(custId){
   const c=state.customers.find(x=>x.id===custId);
   if(!c) return;
@@ -1028,7 +1158,6 @@ async function init(){
     await openDB();
     await loadLocal();
     document.getElementById('splash').classList.add('hide');
-    setTimeout(()=>document.getElementById('splash').classList.remove('hide'),400); // Fallback jika remove error
     setTimeout(()=>{const sp=document.getElementById('splash'); if(sp) sp.remove();},400);
     refreshUI();
     updateSyncDot();
