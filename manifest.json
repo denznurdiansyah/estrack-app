@@ -7,9 +7,10 @@
   "theme_color": "#0F1115",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3100/3100095.png",
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Electrolux_Logo.svg/512px-Electrolux_Logo.svg.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
