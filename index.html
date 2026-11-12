@@ -476,9 +476,62 @@ function renderDashboard(){
   const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
   const cls1=diffTotal>=0?'up':'down'; const cls2=diffElec>=0?'up':'down'; const arr1=diffTotal>=0?'↑':'↓'; const arr2=diffElec>=0?'↑':'↓';
   document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
-  const mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    // --- LOGIKA PENCARIAN RIWAYAT TRANSAKSI ---
+  const searchTx = (document.getElementById('dash-search-tx').value || '').toLowerCase();
+  const titleHist = document.getElementById('dash-history-title');
+  let mySales = [];
+
+  if (searchTx) {
+    // Jika ada kata kunci pencarian, cari di SEMUA transaksi (semua bulan)
+    titleHist.textContent = `Hasil Pencarian: "${searchTx}"`;
+    mySales = state.sales.filter(s => {
+      // Cek apakah nama produk cocok
+      const matchProduk = (s.produk || '').toLowerCase().includes(searchTx);
+      
+      // Cek apakah nama customer atau no HP cocok (berdasarkan customerId)
+      let matchCust = false;
+      if (s.customerId) {
+        const cust = state.customers.find(c => c.id === s.customerId);
+        if (cust) {
+          const namaMatch = (cust.nama || '').toLowerCase().includes(searchTx);
+          const hpMatch = (cust.noHP || '').includes(searchTx);
+          matchCust = namaMatch || hpMatch;
+        }
+      }
+      return matchProduk || matchCust;
+    });
+  } else {
+    // Jika kolom pencarian kosong, tampilkan transaksi bulan ini saja
+    titleHist.textContent = 'Riwayat Transaksi Bulan Ini';
+    mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan);
+  }
+
+  // Urutkan dari yang terbaru
+  mySales.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+
   const histEl = document.getElementById('dash-history');
-  histEl.innerHTML = mySales.length === 0 ? '<div class="muted text-center" style="padding:20px">Belum ada transaksi bulan ini</div>' : mySales.map(s => `<div class="item"><div class="item-body"><div class="item-title">${esc(s.produk)} <span class="badge ${s.isElectrolux?'electrolux':'non'}">${s.brand}</span></div><div class="item-sub">${s.tanggal} · Qty: ${s.qty}</div></div><div class="item-price">${fmtRpShort(s.total)}</div><button class="icon-btn del" onclick="deleteSale('${s.id}')">🗑️</button></div>`).join('');
+  if(mySales.length === 0){
+    histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Transaksi tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`;
+  } else {
+    histEl.innerHTML = mySales.map(s => {
+      // Cari nama customer untuk ditampilkan di riwayat
+      let custName = '';
+      if(s.customerId) {
+        const c = state.customers.find(x => x.id === s.customerId);
+        if(c) custName = c.nama;
+      }
+      return `
+      <div class="item">
+        <div class="item-body">
+          <div class="item-title">${esc(s.produk)} <span class="badge ${s.isElectrolux?'electrolux':'non'}">${s.brand}</span></div>
+          <div class="item-sub">${s.tanggal} · Qty: ${s.qty} ${custName ? '· 👤 '+custName : ''}</div>
+        </div>
+        <div class="item-price">${fmtRpShort(s.total)}</div>
+        <button class="icon-btn del" onclick="deleteSale('${s.id}')">🗑️</button>
+      </div>
+    `}).join('');
+  }
+
   updateSyncDot();
 }
 function shiftMonth(ym,delta){ let [y,m]=ym.split('-').map(Number); m+=delta; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+'-'+String(m).padStart(2,'0'); }
