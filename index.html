@@ -152,8 +152,11 @@ textarea{resize:vertical;min-height:80px}
   <div class="card" id="dash-review"></div>
   <div class="section-title">Grafik 12 Bulan Terakhir</div>
   <div class="card"><canvas id="chart"></canvas><div class="legend"><span><i style="background:#FFD700"></i> Total</span><span><i style="background:#1E90FF"></i> Electrolux</span></div></div>
-  <div class="section-title">Riwayat Transaksi Bulan Ini</div>
-  <div id="dash-history"></div>
+  <div class="section-title" id="dash-history-title">Riwayat Transaksi Bulan Ini</div>
+<div class="search-bar">
+  <input id="dash-search-tx" placeholder="Cari nama customer / no HP / produk..." oninput="renderDashboard()">
+</div>
+<div id="dash-history"></div>
 </section>
 
 <section id="tab-products" class="tab">
