@@ -466,49 +466,81 @@ function getTargetForMonth(m){
 }
 
 function renderDashboard(){
-  const bulan=currentMonth(); const target=getTargetForMonth(bulan);
-  const total=sumMonth(bulan); const elec=sumMonth(bulan,true); const non=sumMonth(bulan,false); const transaksi=state.sales.filter(s=>String(s.tanggal).slice(0,7)===bulan).length;
-  document.getElementById('dash-total').innerHTML=fmtRp(total)+' <span class="sub">/ '+fmtRp(target.toko)+'</span>';
-  const pctToko=Math.min(100,Math.round(total/target.toko*100)); document.getElementById('dash-total-bar').style.width=pctToko+'%'; document.getElementById('dash-total-pct').textContent=pctToko+'%'; document.getElementById('dash-total-sisa').textContent='Sisa: '+fmtRp(Math.max(0,target.toko-total));
-  document.getElementById('dash-elec').textContent=fmtRp(elec); const pctElec=Math.min(100,Math.round(elec/target.elec*100)); document.getElementById('dash-elec-bar').style.width=pctElec+'%'; document.getElementById('dash-elec-pct').textContent=pctElec+'% dari '+fmtRpShort(target.elec);
-  document.getElementById('dash-non').textContent=fmtRp(non); document.getElementById('dash-transaksi').textContent=transaksi+' transaksi';
-  const prevM=shiftMonth(bulan,-1); const prevTotal=sumMonth(prevM); const prevElec=sumMonth(prevM,true); const diffTotal=total-prevTotal; const diffElec=elec-prevElec;
-  const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
-  const cls1=diffTotal>=0?'up':'down'; const cls2=diffElec>=0?'up':'down'; const arr1=diffTotal>=0?'↑':'↓'; const arr2=diffElec>=0?'↑':'↓';
-  document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
-    // --- LOGIKA PENCARIAN RIWAYAT TRANSAKSI (FIXED) ---
-const searchTx = (document.getElementById('dash-search-tx').value || '').toLowerCase();
-const titleHist = document.getElementById('dash-history-title');
-let mySales = [];
-
-if (searchTx) {
-  titleHist.textContent = `Hasil Pencarian Customer: "${searchTx}"`;
+  const bulan=currentMonth(); 
+  const target=getTargetForMonth(bulan);
+  const total=sumMonth(bulan); 
+  const elec=sumMonth(bulan,true); 
+  const non=sumMonth(bulan,false); 
+  const transaksi=state.sales.filter(s=>String(s.tanggal).slice(0,7)===bulan).length;
   
-  // 1. Cari ID Customer yang namanya atau No HP-nya cocok dengan pencarian
-  const matchedCustIds = state.customers
-    .filter(c => 
-      (c.nama || '').toLowerCase().includes(searchTx) || 
-      (c.noHP || '').includes(searchTx)
-    )
-    .map(c => c.id);
+  document.getElementById('dash-total').innerHTML=fmtRp(total)+' <span class="sub">/ '+fmtRp(target.toko)+'</span>';
+  const pctToko=Math.min(100,Math.round(total/target.toko*100)); 
+  document.getElementById('dash-total-bar').style.width=pctToko+'%'; 
+  document.getElementById('dash-total-pct').textContent=pctToko+'%'; 
+  document.getElementById('dash-total-sisa').textContent='Sisa: '+fmtRp(Math.max(0,target.toko-total));
+  
+  document.getElementById('dash-elec').textContent=fmtRp(elec); 
+  const pctElec=Math.min(100,Math.round(elec/target.elec*100)); 
+  document.getElementById('dash-elec-bar').style.width=pctElec+'%'; 
+  document.getElementById('dash-elec-pct').textContent=pctElec+'% dari '+fmtRpShort(target.elec);
+  
+  document.getElementById('dash-non').textContent=fmtRp(non); 
+  document.getElementById('dash-transaksi').textContent=transaksi+' transaksi';
+  
+  const prevM=shiftMonth(bulan,-1); 
+  const prevTotal=sumMonth(prevM); 
+  const prevElec=sumMonth(prevM,true); 
+  const diffTotal=total-prevTotal; 
+  const diffElec=elec-prevElec;
+  const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); 
+  const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
+  const cls1=diffTotal>=0?'up':'down'; 
+  const cls2=diffElec>=0?'up':'down'; 
+  const arr1=diffTotal>=0?'↑':'↓'; 
+  const arr2=diffElec>=0?'↑':'↓';
+  
+  document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
 
-  // 2. Tampilkan transaksi HANYA JIKA ID Customer-nya ada di daftar yang cocok
-  mySales = state.sales.filter(s => matchedCustIds.includes(s.customerId));
-} else {
-    // Jika kolom pencarian kosong, tampilkan transaksi bulan ini saja
+  // ================= LOGIKA PENCARIAN YANG BARU =================
+  const searchInput = document.getElementById('dash-search-tx');
+  const searchTx = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  const titleHist = document.getElementById('dash-history-title');
+  let mySales = [];
+
+  if (searchTx.length > 0) {
+    // Mode Pencarian
+    titleHist.textContent = `Hasil Pencarian: "${searchTx}"`;
+    
+    // Cari transaksi yang customerId-nya memiliki nama atau no HP yang cocok
+    mySales = state.sales.filter(s => {
+      if (!s.customerId) return false; // Abaikan jika tidak ada ID customer
+      
+      const cust = state.customers.find(c => c.id === s.customerId);
+      if (!cust) return false;
+      
+      const matchNama = (cust.nama || '').toLowerCase().includes(searchTx);
+      const matchHP = (cust.noHP || '').includes(searchTx);
+      
+      return matchNama || matchHP;
+    });
+  } else {
+    // Mode Normal (Tampilkan bulan ini)
     titleHist.textContent = 'Riwayat Transaksi Bulan Ini';
     mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan);
   }
 
-  // Urutkan dari yang terbaru
-  mySales.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  // Urutkan dengan aman (antisipasi jika createdAt kosong)
+  mySales.sort((a,b) => {
+    const dateA = a.createdAt || '';
+    const dateB = b.createdAt || '';
+    return dateB.localeCompare(dateA);
+  });
 
   const histEl = document.getElementById('dash-history');
   if(mySales.length === 0){
-    histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Transaksi tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`;
+    histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Data transaksi tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`;
   } else {
     histEl.innerHTML = mySales.map(s => {
-      // Cari nama customer untuk ditampilkan di riwayat
       let custName = '';
       if(s.customerId) {
         const c = state.customers.find(x => x.id === s.customerId);
