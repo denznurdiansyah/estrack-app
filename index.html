@@ -58,6 +58,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;paddi
 .icon-btn:active{background:var(--border)}
 .icon-btn.wa{background:linear-gradient(135deg,#25D366,#128C7E);color:white}
 .icon-btn.del{background:rgba(239,68,68,.1);color:var(--red)}
+.icon-btn.edit{background:rgba(255,215,0,.1);color:var(--gold)}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .badge.belum{background:rgba(239,68,68,.15);color:var(--red)}
 .badge.sudah{background:rgba(34,197,94,.15);color:var(--green)}
@@ -152,11 +153,12 @@ textarea{resize:vertical;min-height:80px}
   <div class="card" id="dash-review"></div>
   <div class="section-title">Grafik 12 Bulan Terakhir</div>
   <div class="card"><canvas id="chart"></canvas><div class="legend"><span><i style="background:#FFD700"></i> Total</span><span><i style="background:#1E90FF"></i> Electrolux</span></div></div>
+  
   <div class="section-title" id="dash-history-title">Riwayat Transaksi Bulan Ini</div>
-<div class="search-bar">
-  <input id="dash-search-tx" placeholder="Cari nama customer / no HP / produk..." oninput="renderDashboard()">
-</div>
-<div id="dash-history"></div>
+  <div class="search-bar">
+    <input id="dash-search-tx" placeholder="Cari nama customer / no HP..." oninput="renderHistory()">
+  </div>
+  <div id="dash-history"></div>
 </section>
 
 <section id="tab-products" class="tab">
@@ -218,7 +220,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="muted">Total data lokal:</div>
     <div class="mt" style="font-size:13px" id="data-stats"></div>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON ke Download</button>
-    <div class="muted mt" style="font-size:11px">Versi 2.2 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 2.3 · ESTrack</div>
   </div>
 </section>
 
@@ -239,7 +241,6 @@ textarea{resize:vertical;min-height:80px}
     </div>
     <div class="modal-content">
       <div class="field"><label>Tanggal</label><input type="date" id="sale-tanggal"></div>
-      
       <div class="section-title" style="margin-top:8px">👤 Data Customer (opsional)</div>
       <div class="field"><label>Nama Customer</label><input id="sale-cust-nama" placeholder="Kosongkan jika tidak perlu"></div>
       <div class="field"><label>No HP</label><input id="sale-cust-hp" type="tel" inputmode="tel" placeholder="08xxxxxxxxxx"></div>
@@ -250,10 +251,8 @@ textarea{resize:vertical;min-height:80px}
           <span>Customer ini beli Electrolux?</span>
         </label>
       </div>
-
       <div class="section-title">🛒 Keranjang Belanja</div>
       <div id="sale-cart-list" style="margin-bottom:12px"></div>
-
       <div class="card" style="background:var(--bg2);border:1px solid var(--border);border-style:dashed">
         <div class="label">Tambah Produk ke Keranjang</div>
         <div class="field inline">
@@ -271,17 +270,40 @@ textarea{resize:vertical;min-height:80px}
         </div>
         <button class="btn secondary" onclick="addCartItem()" style="background:rgba(30,144,255,.2);color:#4FA3FF;border:1px solid rgba(30,144,255,.3)">+ Tambahkan ke Keranjang</button>
       </div>
-
       <div class="card" style="background:var(--bg3);margin-top:16px;margin-bottom:12px">
         <div class="row" style="align-items:center">
           <div class="label">Total Keranjang</div>
           <div class="value grad text-right" id="sale-total-grand" style="text-align:right">Rp 0</div>
         </div>
       </div>
-
       <div class="field"><label>Catatan Transaksi (opsional)</label><input id="sale-catatan" placeholder="Catatan tambahan"></div>
-      
       <button class="btn primary" onclick="saveSale()">✅ Simpan Semua Penjualan</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDIT SALE -->
+<div class="modal" id="modal-edit-sale" onclick="closeModalOnBg(event,'modal-edit-sale')">
+  <div class="modal-body" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h2>✏️ Edit Transaksi</h2>
+      <button class="icon-btn" onclick="closeModal('modal-edit-sale')">✕</button>
+    </div>
+    <div class="modal-content">
+      <input type="hidden" id="edit-sale-id">
+      <div class="field"><label>Tanggal</label><input type="date" id="edit-sale-tanggal"></div>
+      <div class="field inline">
+        <div><label>Brand</label><select id="edit-sale-brand" onchange="onEditBrandChange()"></select></div>
+        <div><label>Kategori</label><select id="edit-sale-kategori"></select></div>
+      </div>
+      <div class="field"><label>Nama Produk</label><input id="edit-sale-produk"></div>
+      <div class="field inline">
+        <div><label>Qty</label><input type="number" id="edit-sale-qty" min="1" oninput="calcEditTotal()"></div>
+        <div><label>Harga Satuan</label><input type="number" id="edit-sale-harga" oninput="calcEditTotal()"></div>
+      </div>
+      <div class="card" style="background:var(--bg3);margin-bottom:12px"><div class="label">Total</div><div class="value grad" id="edit-sale-total">Rp 0</div></div>
+      <div class="field"><label>Catatan</label><input id="edit-sale-catatan"></div>
+      <button class="btn primary" onclick="saveEditSale()">💾 Simpan Perubahan</button>
     </div>
   </div>
 </div>
@@ -334,7 +356,7 @@ let db=null;
 let state={sales:[],customers:[],products:[],targets:[],followup:[],masterData:[],settings:{}};
 let custFilter='all';
 let pendingImageBase64=null;
-let currentCart=[]; // Array untuk menampung barang belanjaan sementara
+let currentCart=[];
 const DEFAULT_WA='Halo Kak {nama}, saya dari Electrolux di Electronic Square Sukabumi.\n\nAda promo spesial untuk {produk} bulan ini dengan harga terbaik!\n\nMau saya kirimkan detail dan penawaran spesialnya? 😊';
 
 if ('serviceWorker' in navigator) {
@@ -466,79 +488,51 @@ function getTargetForMonth(m){
 }
 
 function renderDashboard(){
-  const bulan=currentMonth(); 
-  const target=getTargetForMonth(bulan);
-  const total=sumMonth(bulan); 
-  const elec=sumMonth(bulan,true); 
-  const non=sumMonth(bulan,false); 
-  const transaksi=state.sales.filter(s=>String(s.tanggal).slice(0,7)===bulan).length;
-  
+  const bulan=currentMonth(); const target=getTargetForMonth(bulan);
+  const total=sumMonth(bulan); const elec=sumMonth(bulan,true); const non=sumMonth(bulan,false); const transaksi=state.sales.filter(s=>String(s.tanggal).slice(0,7)===bulan).length;
   document.getElementById('dash-total').innerHTML=fmtRp(total)+' <span class="sub">/ '+fmtRp(target.toko)+'</span>';
-  const pctToko=Math.min(100,Math.round(total/target.toko*100)); 
-  document.getElementById('dash-total-bar').style.width=pctToko+'%'; 
-  document.getElementById('dash-total-pct').textContent=pctToko+'%'; 
-  document.getElementById('dash-total-sisa').textContent='Sisa: '+fmtRp(Math.max(0,target.toko-total));
-  
-  document.getElementById('dash-elec').textContent=fmtRp(elec); 
-  const pctElec=Math.min(100,Math.round(elec/target.elec*100)); 
-  document.getElementById('dash-elec-bar').style.width=pctElec+'%'; 
-  document.getElementById('dash-elec-pct').textContent=pctElec+'% dari '+fmtRpShort(target.elec);
-  
-  document.getElementById('dash-non').textContent=fmtRp(non); 
-  document.getElementById('dash-transaksi').textContent=transaksi+' transaksi';
-  
-  const prevM=shiftMonth(bulan,-1); 
-  const prevTotal=sumMonth(prevM); 
-  const prevElec=sumMonth(prevM,true); 
-  const diffTotal=total-prevTotal; 
-  const diffElec=elec-prevElec;
-  const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); 
-  const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
-  const cls1=diffTotal>=0?'up':'down'; 
-  const cls2=diffElec>=0?'up':'down'; 
-  const arr1=diffTotal>=0?'↑':'↓'; 
-  const arr2=diffElec>=0?'↑':'↓';
-  
+  const pctToko=Math.min(100,Math.round(total/target.toko*100)); document.getElementById('dash-total-bar').style.width=pctToko+'%'; document.getElementById('dash-total-pct').textContent=pctToko+'%'; document.getElementById('dash-total-sisa').textContent='Sisa: '+fmtRp(Math.max(0,target.toko-total));
+  document.getElementById('dash-elec').textContent=fmtRp(elec); const pctElec=Math.min(100,Math.round(elec/target.elec*100)); document.getElementById('dash-elec-bar').style.width=pctElec+'%'; document.getElementById('dash-elec-pct').textContent=pctElec+'% dari '+fmtRpShort(target.elec);
+  document.getElementById('dash-non').textContent=fmtRp(non); document.getElementById('dash-transaksi').textContent=transaksi+' transaksi';
+  const prevM=shiftMonth(bulan,-1); const prevTotal=sumMonth(prevM); const prevElec=sumMonth(prevM,true); const diffTotal=total-prevTotal; const diffElec=elec-prevElec;
+  const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
+  const cls1=diffTotal>=0?'up':'down'; const cls2=diffElec>=0?'up':'down'; const arr1=diffTotal>=0?'↑':'↓'; const arr2=diffElec>=0?'↑':'↓';
   document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
+  
+  renderHistory(); // Memanggil fungsi history terpisah
+  updateSyncDot();
+}
 
-  // ================= LOGIKA PENCARIAN YANG BARU =================
+function renderHistory() {
+  const bulan=currentMonth();
   const searchInput = document.getElementById('dash-search-tx');
   const searchTx = searchInput ? searchInput.value.toLowerCase().trim() : '';
   const titleHist = document.getElementById('dash-history-title');
   let mySales = [];
 
   if (searchTx.length > 0) {
-    // Mode Pencarian
     titleHist.textContent = `Hasil Pencarian: "${searchTx}"`;
-    
-    // Cari transaksi yang customerId-nya memiliki nama atau no HP yang cocok
     mySales = state.sales.filter(s => {
-      if (!s.customerId) return false; // Abaikan jika tidak ada ID customer
-      
+      if (!s.customerId) return false;
       const cust = state.customers.find(c => c.id === s.customerId);
       if (!cust) return false;
-      
-      const matchNama = (cust.nama || '').toLowerCase().includes(searchTx);
-      const matchHP = (cust.noHP || '').includes(searchTx);
-      
-      return matchNama || matchHP;
+      return (cust.nama || '').toLowerCase().includes(searchTx) || (cust.noHP || '').includes(searchTx);
     });
   } else {
-    // Mode Normal (Tampilkan bulan ini)
     titleHist.textContent = 'Riwayat Transaksi Bulan Ini';
     mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan);
   }
 
-  // Urutkan dengan aman (antisipasi jika createdAt kosong)
-  mySales.sort((a,b) => {
-    const dateA = a.createdAt || '';
-    const dateB = b.createdAt || '';
-    return dateB.localeCompare(dateA);
-  });
+  mySales.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  // Limit 10 baris jika tidak sedang mencari
+  if (!searchTx && mySales.length > 10) {
+    mySales = mySales.slice(0, 10);
+  }
 
   const histEl = document.getElementById('dash-history');
   if(mySales.length === 0){
-    histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Data transaksi tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`;
+    histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Data tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`;
   } else {
     histEl.innerHTML = mySales.map(s => {
       let custName = '';
@@ -552,14 +546,84 @@ function renderDashboard(){
           <div class="item-title">${esc(s.produk)} <span class="badge ${s.isElectrolux?'electrolux':'non'}">${s.brand}</span></div>
           <div class="item-sub">${s.tanggal} · Qty: ${s.qty} ${custName ? '· 👤 '+custName : ''}</div>
         </div>
-        <div class="item-price">${fmtRpShort(s.total)}</div>
+        <div class="item-price" style="margin-right:5px">${fmtRpShort(s.total)}</div>
+        <button class="icon-btn edit" onclick="openEditSaleModal('${s.id}')">✏️</button>
         <button class="icon-btn del" onclick="deleteSale('${s.id}')">🗑️</button>
       </div>
     `}).join('');
   }
-
-  updateSyncDot();
 }
+
+function openEditSaleModal(id) {
+  const s = state.sales.find(x => x.id === id);
+  if(!s) return;
+  
+  document.getElementById('edit-sale-id').value = s.id;
+  document.getElementById('edit-sale-tanggal').value = s.tanggal;
+  document.getElementById('edit-sale-produk').value = s.produk;
+  document.getElementById('edit-sale-qty').value = s.qty;
+  document.getElementById('edit-sale-harga').value = s.harga;
+  document.getElementById('edit-sale-catatan').value = s.catatan || '';
+
+  const selBrand = document.getElementById('edit-sale-brand'); selBrand.innerHTML = '';
+  const selKat = document.getElementById('edit-sale-kategori'); selKat.innerHTML = '';
+  state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).forEach(b=>selBrand.innerHTML += `<option value="${esc(b.value)}">${esc(b.value)}</option>`);
+  state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).forEach(k=>selKat.innerHTML += `<option value="${esc(k.value)}">${esc(k.value)}</option>`);
+  
+  selBrand.value = s.brand;
+  selKat.value = s.kategori;
+
+  calcEditTotal();
+  openModal('modal-edit-sale');
+}
+
+function onEditBrandChange() {} // Opsional, untuk mengubah kategori otomatis jika diperlukan
+
+function calcEditTotal() {
+  const q = Number(document.getElementById('edit-sale-qty').value) || 0;
+  const h = Number(document.getElementById('edit-sale-harga').value) || 0;
+  document.getElementById('edit-sale-total').textContent = fmtRp(q * h);
+}
+
+async function saveEditSale() {
+  const id = document.getElementById('edit-sale-id').value;
+  const tanggal = document.getElementById('edit-sale-tanggal').value;
+  const brand = document.getElementById('edit-sale-brand').value;
+  const kategori = document.getElementById('edit-sale-kategori').value;
+  const produk = document.getElementById('edit-sale-produk').value.trim();
+  const qty = Number(document.getElementById('edit-sale-qty').value) || 0;
+  const harga = Number(document.getElementById('edit-sale-harga').value) || 0;
+  const catatan = document.getElementById('edit-sale-catatan').value.trim();
+
+  if(!produk || qty < 1 || harga < 1) { toast('Isi data dengan benar', 'error'); return; }
+
+  const total = qty * harga;
+  const isElectrolux = brand === 'Electrolux';
+
+  const payload = { id, tanggal, brand, produk, kategori, qty, harga, total, catatan, isElectrolux };
+
+  if (navigator.onLine) {
+    try {
+      await callApi('updateSale', payload);
+    } catch(e) {
+      toast('⚠️ Gagal update ke server: ' + e.message, 'error');
+      return;
+    }
+  }
+
+  const s = state.sales.find(x => x.id === id);
+  if(s) {
+    Object.assign(s, payload);
+    s._synced = navigator.onLine;
+    await idbPut('sales', s);
+  }
+
+  await loadLocal();
+  closeModal('modal-edit-sale');
+  renderDashboard();
+  toast('✅ Transaksi diperbarui', 'success');
+}
+
 function shiftMonth(ym,delta){ let [y,m]=ym.split('-').map(Number); m+=delta; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+'-'+String(m).padStart(2,'0'); }
 function drawChart(){
   const cv=document.getElementById('chart'); if(!cv) return; const ctx=cv.getContext('2d'); const dpr=window.devicePixelRatio||1; const cssW=cv.parentElement.clientWidth-32; const cssH=200;
@@ -573,164 +637,60 @@ function drawChart(){
   line('total','#FFD700'); line('elec','#1E90FF');
 }
 
-// ================== SALE MODAL (CART SYSTEM) ==================
-
+// SALE MODAL
 function openSaleModal(){
-  currentCart = []; // Reset keranjang
-  renderCart();
-
-  document.getElementById('sale-tanggal').value=todayStr(); 
-  document.getElementById('sale-cust-nama').value=''; 
-  document.getElementById('sale-cust-hp').value=''; 
-  document.getElementById('sale-cust-alamat').value=''; 
-  document.getElementById('sale-catatan').value=''; 
-  document.getElementById('sale-sudah-elec').checked=false;
-  
-  // Reset form tambah barang
-  document.getElementById('sale-produk').value='';
-  document.getElementById('sale-qty').value=1;
-  document.getElementById('sale-harga').value='';
-
+  currentCart = []; renderCart();
+  document.getElementById('sale-tanggal').value=todayStr(); document.getElementById('sale-cust-nama').value=''; document.getElementById('sale-cust-hp').value=''; document.getElementById('sale-cust-alamat').value=''; document.getElementById('sale-catatan').value=''; document.getElementById('sale-sudah-elec').checked=false;
+  document.getElementById('sale-produk').value=''; document.getElementById('sale-qty').value=1; document.getElementById('sale-harga').value='';
   const selBrand = document.getElementById('sale-brand'); selBrand.innerHTML = '';
   const selKat = document.getElementById('sale-kategori'); selKat.innerHTML = '';
   state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).forEach(b=>selBrand.innerHTML += `<option value="${esc(b.value)}">${esc(b.value)}</option>`);
   state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).forEach(k=>selKat.innerHTML += `<option value="${esc(k.value)}">${esc(k.value)}</option>`);
-  
-  onBrandChange(); 
-  openModal('modal-sale');
+  onBrandChange(); openModal('modal-sale');
 }
-
 function onBrandChange(){
   const brand=document.getElementById('sale-brand').value; const wrap=document.getElementById('sale-prod-picker-wrap');
   if(brand==='Electrolux'){ wrap.style.display='block'; const picker=document.getElementById('sale-prod-picker'); picker.innerHTML='<option value="">— Pilih dari katalog —</option>'; state.products.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; }); } else { wrap.style.display='none'; }
 }
-
 function onProdPick(){
   const id=document.getElementById('sale-prod-picker').value; if(!id) return; const p=state.products.find(x=>x.id===id); if(!p) return;
-  document.getElementById('sale-produk').value=p.namaProduk; document.getElementById('sale-kategori').value=p.kategori; document.getElementById('sale-harga').value=p.harga; 
+  document.getElementById('sale-produk').value=p.namaProduk; document.getElementById('sale-kategori').value=p.kategori; document.getElementById('sale-harga').value=p.harga;
 }
-
-// Render Daftar Barang di Keranjang
 function renderCart() {
-  const listEl = document.getElementById('sale-cart-list');
-  const totalEl = document.getElementById('sale-total-grand');
-  
-  if(currentCart.length === 0) {
-    listEl.innerHTML = '<div class="muted text-center" style="padding:10px;border:1px dashed var(--border);border-radius:8px">Belum ada barang di keranjang</div>';
-    totalEl.textContent = 'Rp 0';
-    return;
-  }
-  
+  const listEl = document.getElementById('sale-cart-list'); const totalEl = document.getElementById('sale-total-grand');
+  if(currentCart.length === 0) { listEl.innerHTML = '<div class="muted text-center" style="padding:10px;border:1px dashed var(--border);border-radius:8px">Belum ada barang di keranjang</div>'; totalEl.textContent = 'Rp 0'; return; }
   let grandTotal = 0;
   listEl.innerHTML = currentCart.map((item, index) => {
     grandTotal += (item.harga * item.qty);
-    return `
-      <div class="cart-item">
-        <div class="cart-item-info">
-          <div class="cart-item-title">${esc(item.produk)}</div>
-          <div class="cart-item-sub">${esc(item.brand)} · ${item.qty} x ${fmtRpShort(item.harga)}</div>
-        </div>
-        <div class="cart-item-price">${fmtRpShort(item.harga * item.qty)}</div>
-        <button class="icon-btn del" onclick="removeCartItem(${index})" style="width:28px;height:28px;font-size:12px">✕</button>
-      </div>
-    `;
+    return `<div class="cart-item"><div class="cart-item-info"><div class="cart-item-title">${esc(item.produk)}</div><div class="cart-item-sub">${esc(item.brand)} · ${item.qty} x ${fmtRpShort(item.harga)}</div></div><div class="cart-item-price">${fmtRpShort(item.harga * item.qty)}</div><button class="icon-btn del" onclick="removeCartItem(${index})" style="width:28px;height:28px;font-size:12px">✕</button></div>`;
   }).join('');
-  
   totalEl.textContent = fmtRp(grandTotal);
 }
-
-// Tambah Barang ke Keranjang
 function addCartItem() {
-  const brand = document.getElementById('sale-brand').value;
-  const kategori = document.getElementById('sale-kategori').value;
-  const produk = document.getElementById('sale-produk').value.trim();
-  const qty = Number(document.getElementById('sale-qty').value) || 0;
-  const harga = Number(document.getElementById('sale-harga').value) || 0;
-
-  if(!produk) { toast('Nama produk wajib diisi', 'error'); return; }
-  if(qty < 1) { toast('Qty minimal 1', 'error'); return; }
-  if(harga < 1) { toast('Harga wajib diisi', 'error'); return; }
-
-  currentCart.push({
-    brand, kategori, produk, qty, harga,
-    isElectrolux: brand === 'Electrolux'
-  });
-
-  // Reset form item
-  document.getElementById('sale-produk').value = '';
-  document.getElementById('sale-qty').value = 1;
-  document.getElementById('sale-harga').value = '';
-  document.getElementById('sale-prod-picker').value = '';
-
-  renderCart();
-  toast('✅ Masuk keranjang');
+  const brand = document.getElementById('sale-brand').value; const kategori = document.getElementById('sale-kategori').value;
+  const produk = document.getElementById('sale-produk').value.trim(); const qty = Number(document.getElementById('sale-qty').value) || 0; const harga = Number(document.getElementById('sale-harga').value) || 0;
+  if(!produk) { toast('Nama produk wajib diisi', 'error'); return; } if(qty < 1) { toast('Qty minimal 1', 'error'); return; } if(harga < 1) { toast('Harga wajib diisi', 'error'); return; }
+  currentCart.push({ brand, kategori, produk, qty, harga, isElectrolux: brand === 'Electrolux' });
+  document.getElementById('sale-produk').value = ''; document.getElementById('sale-qty').value = 1; document.getElementById('sale-harga').value = ''; document.getElementById('sale-prod-picker').value = '';
+  renderCart(); toast('✅ Masuk keranjang');
 }
-
-function removeCartItem(index) {
-  currentCart.splice(index, 1);
-  renderCart();
-}
+function removeCartItem(index) { currentCart.splice(index, 1); renderCart(); }
 
 async function saveSale(){
-  const tanggal=document.getElementById('sale-tanggal').value||todayStr(); 
-  const custNama=document.getElementById('sale-cust-nama').value.trim(); 
-  const custHp=document.getElementById('sale-cust-hp').value.trim(); 
-  const custAlamat=document.getElementById('sale-cust-alamat').value.trim();
-  const sudahElec=document.getElementById('sale-sudah-elec').checked; 
-  const catatan=document.getElementById('sale-catatan').value.trim();
-
+  const tanggal=document.getElementById('sale-tanggal').value||todayStr(); const custNama=document.getElementById('sale-cust-nama').value.trim(); const custHp=document.getElementById('sale-cust-hp').value.trim(); const custAlamat=document.getElementById('sale-cust-alamat').value.trim();
+  const sudahElec=document.getElementById('sale-sudah-elec').checked; const catatan=document.getElementById('sale-catatan').value.trim();
   if(currentCart.length === 0) { toast('Keranjang belanja masih kosong', 'error'); return; }
-
+  const orderId = 'SQ-' + new Date().getTime().toString().slice(-6); const namaSales = 'Sales 1'; 
   let customerId='';
-  
-  // 1. Simpan/Update Data Customer dulu
   if(custNama && custHp){
-    const normPhone=normalizePhone(custHp); 
-    let existing=state.customers.find(c=>normalizePhone(c.noHP)===normPhone);
-    if(existing){ 
-      customerId=existing.id; 
-      existing.statusFollowUp=sudahElec?'sudah':'belum'; 
-      existing.sudahBeliElectrolux = sudahElec || existing.sudahBeliElectrolux; // Jangan hilangkan centang lama
-      existing._synced=false; 
-      await idbPut('customers',existing); 
-    }
-    else { 
-      customerId=uuid(); 
-      await idbPut('customers',{
-        id:customerId, nama:custNama, noHP:normPhone, alamat:custAlamat,
-        brandDiminati:currentCart[0].brand, produkDiminati:currentCart[0].produk,
-        statusFollowUp:sudahElec?'sudah':'belum', terakhirFollowUp:'',
-        sudahBeliElectrolux:sudahElec, createdAt:new Date().toISOString(), _synced:false
-      }); 
-    }
+    const normPhone=normalizePhone(custHp); let existing=state.customers.find(c=>normalizePhone(c.noHP)===normPhone);
+    if(existing){ customerId=existing.id; existing.statusFollowUp=sudahElec?'sudah':'belum'; existing.sudahBeliElectrolux = sudahElec || existing.sudahBeliElectrolux; existing._synced=false; await idbPut('customers',existing); }
+    else { customerId=uuid(); await idbPut('customers',{id:customerId, nama:custNama, noHP:normPhone, alamat:custAlamat, brandDiminati:currentCart[0].brand, produkDiminati:currentCart[0].produk, statusFollowUp:sudahElec?'sudah':'belum', terakhirFollowUp:'', sudahBeliElectrolux:sudahElec, createdAt:new Date().toISOString(), _synced:false}); }
   }
-
-  // 2. Simpan Semua Barang di Keranjang ke Database Sales
-  const newSales = currentCart.map(item => ({
-    id: uuid(),
-    tanggal,
-    brand: item.brand,
-    produk: item.produk,
-    kategori: item.kategori,
-    qty: item.qty,
-    harga: item.harga,
-    total: item.harga * item.qty,
-    customerId,
-    isElectrolux: item.isElectrolux,
-    catatan,
-    createdAt: new Date().toISOString(),
-    _synced: false
-  }));
-
+  const newSales = currentCart.map(item => ({ id: uuid(), orderId: orderId, namaSales: namaSales, tanggal, brand: item.brand, produk: item.produk, kategori: item.kategori, qty: item.qty, harga: item.harga, total: item.harga * item.qty, customerId, isElectrolux: item.isElectrolux, catatan, statusPembayaran: 'Pending', metodePembayaran: '', createdAt: new Date().toISOString(), _synced: false }));
   await idbBulkPut('sales', newSales);
-  
-  await loadLocal(); 
-  closeModal('modal-sale'); 
-  toast(navigator.onLine?'✅ Semua penjualan tersimpan':'💾 Disimpan offline','success'); 
-  refreshUI(); 
-  if(navigator.onLine) syncAll(true);
+  await loadLocal(); closeModal('modal-sale'); toast(navigator.onLine?'✅ Pesanan terkirim ke Kasir':'💾 Disimpan offline','success'); refreshUI(); if(navigator.onLine) syncAll(true);
 }
-
 async function deleteSale(id) { if(!confirm('Yakin ingin menghapus transaksi ini?')) return; if(navigator.onLine){ try { await callApi('deleteSale', { id: id }); } catch(e) { toast('⚠️ Gagal hapus di server: ' + e.message, 'error'); return; } } await idbDel('sales', id); await loadLocal(); refreshUI(); toast('🗑️ Transaksi dihapus', 'success'); }
 
 function renderProducts(){
@@ -743,15 +703,10 @@ function renderProducts(){
     <div class="item-body"><div class="item-title">${esc(p.namaProduk)}</div><div class="item-sub">${esc(p.kategori)} · ${esc((p.sellingPoint||'').slice(0,50))}</div></div>
     <div class="item-price">${fmtRpShort(p.harga)}</div></div>`).join('');
 }
-
 function openProductModal(id){
-  document.getElementById('img-preview').style.display = 'none';
-  document.getElementById('img-status').textContent = '';
-  pendingImageBase64 = null;
-  
+  document.getElementById('img-preview').style.display = 'none'; document.getElementById('img-status').textContent = ''; pendingImageBase64 = null;
   const selKat = document.getElementById('prod-kategori'); selKat.innerHTML = '';
   state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).forEach(k=>selKat.innerHTML += `<option value="${esc(k.value)}">${esc(k.value)}</option>`);
-
   if(id){
     const p=state.products.find(x=>x.id===id); if(!p) return;
     document.getElementById('prod-modal-title').textContent='Edit Produk'; document.getElementById('prod-id').value=p.id;
@@ -763,12 +718,10 @@ function openProductModal(id){
   } else {
     document.getElementById('prod-modal-title').textContent='Tambah Produk'; document.getElementById('prod-id').value='';
     document.getElementById('prod-nama').value=''; document.getElementById('prod-harga').value=''; document.getElementById('prod-selling').value='';
-    document.getElementById('prod-img-url').value = '';
-    document.getElementById('prod-delete-btn').style.display='none';
+    document.getElementById('prod-img-url').value = ''; document.getElementById('prod-delete-btn').style.display='none';
   }
   openModal('modal-product');
 }
-
 function handleImageUpload(event) {
   const file = event.target.files[0]; if(!file) return;
   document.getElementById('img-status').textContent = 'Memproses gambar...';
@@ -789,35 +742,21 @@ function handleImageUpload(event) {
   };
   reader.readAsDataURL(file);
 }
-
 async function saveProduct(){
   const id=document.getElementById('prod-id').value; const namaProduk=document.getElementById('prod-nama').value.trim();
   const kategori=document.getElementById('prod-kategori').value; const harga=Number(document.getElementById('prod-harga').value)||0;
-  const sellingPoint=document.getElementById('prod-selling').value.trim();
-  let imageUrl = document.getElementById('prod-img-url').value;
-  
+  const sellingPoint=document.getElementById('prod-selling').value.trim(); let imageUrl = document.getElementById('prod-img-url').value;
   if(!namaProduk){toast('Nama produk wajib','error');return;} if(harga<1){toast('Harga wajib','error');return;}
-
   if(navigator.onLine){
     try{
-      if (pendingImageBase64) {
-        toast('⏳ Mengunggah foto ke Drive...'); document.getElementById('img-status').textContent = 'Mengunggah ke Drive...';
-        const res = await callApi('uploadImage', { base64: pendingImageBase64, mimeType: 'image/jpeg', filename: 'prod_'+Date.now()+'.jpg' });
-        imageUrl = res.url;
-      }
+      if (pendingImageBase64) { toast('⏳ Mengunggah foto ke Drive...'); document.getElementById('img-status').textContent = 'Mengunggah ke Drive...'; const res = await callApi('uploadImage', { base64: pendingImageBase64, mimeType: 'image/jpeg', filename: 'prod_'+Date.now()+'.jpg' }); imageUrl = res.url; }
       await callApi('updateProduct',{id:id||null,brand:'Electrolux',namaProduk,kategori,harga,sellingPoint,imageUrl});
-      await syncAll(true);
-      toast('✅ Produk tersimpan','success');
+      await syncAll(true); toast('✅ Produk tersimpan','success');
     }catch(e){toast('⚠️ '+e.message,'error');return;}
   } else {
     if(pendingImageBase64) toast('⚠️ Foto hanya bisa diunggah saat Online','error');
-    if(id){
-      const p=state.products.find(x=>x.id===id);
-      if(p){p.namaProduk=namaProduk;p.kategori=kategori;p.harga=harga;p.sellingPoint=sellingPoint;p._synced=false;}
-      await idbPut('products',p);
-    } else {
-      await idbPut('products',{id:uuid(),brand:'Electrolux',namaProduk,kategori,harga,sellingPoint,imageUrl,updatedAt:new Date().toISOString(),_synced:false});
-    }
+    if(id){ const p=state.products.find(x=>x.id===id); if(p){p.namaProduk=namaProduk;p.kategori=kategori;p.harga=harga;p.sellingPoint=sellingPoint;p._synced=false;} await idbPut('products',p); }
+    else { await idbPut('products',{id:uuid(),brand:'Electrolux',namaProduk,kategori,harga,sellingPoint,imageUrl,updatedAt:new Date().toISOString(),_synced:false}); }
     toast('💾 Disimpan offline - sync nanti','success');
   }
   await loadLocal(); closeModal('modal-product'); renderProducts();
@@ -846,11 +785,9 @@ function renderCustomers(){
     </div>`;
   }).join('');
 }
-
 function openCustomerModal(id){
   const selBrand = document.getElementById('cust-brand-diminati'); selBrand.innerHTML = '<option value="">- Pilih Brand -</option>';
   state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).forEach(b=>selBrand.innerHTML += `<option value="${esc(b.value)}">${esc(b.value)}</option>`);
-
   if(id){
     const c=state.customers.find(x=>x.id===id); if(!c) return;
     document.getElementById('cust-modal-title').textContent='Edit Customer'; document.getElementById('cust-id').value=c.id;
@@ -864,23 +801,19 @@ function openCustomerModal(id){
   }
   openModal('modal-customer');
 }
-
 async function saveCustomer(){
   const id=document.getElementById('cust-id').value; const nama=document.getElementById('cust-nama').value.trim(); const hp=document.getElementById('cust-hp').value.trim();
   const alamat=document.getElementById('cust-alamat').value.trim(); const brandDiminati=document.getElementById('cust-brand-diminati').value;
   const produkDiminati=document.getElementById('cust-produk-diminati').value.trim(); const sudahBeli=document.getElementById('cust-sudah-beli').checked;
   if(!nama){toast('Nama wajib diisi','error');return;} if(!hp){toast('No HP wajib diisi','error');return;}
   const normPhone=normalizePhone(hp);
-  if(id){
-    const c=state.customers.find(x=>x.id===id);
-    if(c){ c.nama=nama; c.noHP=normPhone; c.alamat=alamat; c.brandDiminati=brandDiminati; c.produkDiminati=produkDiminati; c.sudahBeliElectrolux=sudahBeli; c._synced=false; await idbPut('customers',c); }
-  } else {
+  if(id){ const c=state.customers.find(x=>x.id===id); if(c){ c.nama=nama; c.noHP=normPhone; c.alamat=alamat; c.brandDiminati=brandDiminati; c.produkDiminati=produkDiminati; c.sudahBeliElectrolux=sudahBeli; c._synced=false; await idbPut('customers',c); } }
+  else {
     if(state.customers.find(c=>normalizePhone(c.noHP)===normPhone)){ toast('No HP sudah terdaftar','error');return; }
     await idbPut('customers',{id:uuid(), nama:nama, noHP:normPhone, alamat:alamat, brandDiminati:brandDiminati, produkDiminati:produkDiminati, statusFollowUp:'belum', terakhirFollowUp:'', sudahBeliElectrolux:sudahBeli, createdAt:new Date().toISOString(), _synced:false});
   }
   await loadLocal(); closeModal('modal-customer'); toast(navigator.onLine?'✅ Customer tersimpan':'💾 Disimpan offline','success'); renderCustomers(); if(navigator.onLine) syncAll(true);
 }
-
 async function openWA(custId){
   const c=state.customers.find(x=>x.id===custId); if(!c) return; const phone=normalizePhone(c.noHP); if(!phone){toast('No HP tidak valid','error');return;}
   const tpl=state.settings.waTemplate||DEFAULT_WA; const msg=tpl.replace(/{nama}/g,c.nama||'').replace(/{produk}/g,c.produkDiminati||'produk Electrolux');
@@ -895,31 +828,18 @@ function renderMasterData() {
   bEl.innerHTML = state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).map(m => `<span class="tag">${esc(m.value)} <span onclick="delMaster('${m.id}')">×</span></span>`).join('');
   cEl.innerHTML = state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).map(m => `<span class="tag">${esc(m.value)} <span onclick="delMaster('${m.id}')">×</span></span>`).join('');
 }
-
 async function addMaster(type) {
-  const inputId = type === 'brand' ? 'new-brand' : 'new-kategori';
-  const val = document.getElementById(inputId).value.trim();
+  const inputId = type === 'brand' ? 'new-brand' : 'new-kategori'; const val = document.getElementById(inputId).value.trim();
   if(!val) return;
   if(state.masterData.find(m => m.type === type && m.value.toLowerCase() === val.toLowerCase())) { toast('Data sudah ada', 'error'); return; }
-  
-  if(navigator.onLine) {
-    try { await callApi('saveMaster', { type, value: val }); } catch(e) { toast('Gagal sync: '+e.message, 'error'); return; }
-  }
+  if(navigator.onLine) { try { await callApi('saveMaster', { type, value: val }); } catch(e) { toast('Gagal sync: '+e.message, 'error'); return; } }
   await idbPut('masterData', { id: uuid(), type, value: val, _synced: navigator.onLine });
-  document.getElementById(inputId).value = '';
-  await loadLocal(); renderMasterData();
-  if(navigator.onLine) syncAll(true);
-  toast('✅ Ditambahkan');
+  document.getElementById(inputId).value = ''; await loadLocal(); renderMasterData(); if(navigator.onLine) syncAll(true); toast('✅ Ditambahkan');
 }
-
 async function delMaster(id) {
   if(!confirm('Hapus item ini?')) return;
-  if(navigator.onLine) {
-    try { await callApi('deleteMaster', { id }); } catch(e) { toast('Gagal hapus: '+e.message, 'error'); return; }
-  }
-  await idbDel('masterData', id);
-  await loadLocal(); renderMasterData();
-  toast('🗑️ Dihapus');
+  if(navigator.onLine) { try { await callApi('deleteMaster', { id }); } catch(e) { toast('Gagal hapus: '+e.message, 'error'); return; } }
+  await idbDel('masterData', id); await loadLocal(); renderMasterData(); toast('🗑️ Dihapus');
 }
 
 function renderSettings(){
@@ -933,7 +853,6 @@ function renderSettings(){
   document.getElementById('set-bulan').onchange=()=>{ const t=getTargetForMonth(document.getElementById('set-bulan').value); document.getElementById('set-target-elec').value=t.elec; document.getElementById('set-target-toko').value=t.toko; };
   renderMasterData();
 }
-
 async function saveTarget(){
   const bulan=document.getElementById('set-bulan').value; const tE=Number(document.getElementById('set-target-elec').value)||0; const tT=Number(document.getElementById('set-target-toko').value)||0;
   if(!bulan||tE<1||tT<1){toast('Isi target dengan benar','error');return;}
