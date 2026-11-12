@@ -476,31 +476,25 @@ function renderDashboard(){
   const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
   const cls1=diffTotal>=0?'up':'down'; const cls2=diffElec>=0?'up':'down'; const arr1=diffTotal>=0?'↑':'↓'; const arr2=diffElec>=0?'↑':'↓';
   document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
-    // --- LOGIKA PENCARIAN RIWAYAT TRANSAKSI ---
-  const searchTx = (document.getElementById('dash-search-tx').value || '').toLowerCase();
-  const titleHist = document.getElementById('dash-history-title');
-  let mySales = [];
+    // --- LOGIKA PENCARIAN RIWAYAT TRANSAKSI (FIXED) ---
+const searchTx = (document.getElementById('dash-search-tx').value || '').toLowerCase();
+const titleHist = document.getElementById('dash-history-title');
+let mySales = [];
 
-  if (searchTx) {
-    // Jika ada kata kunci pencarian, cari di SEMUA transaksi (semua bulan)
-    titleHist.textContent = `Hasil Pencarian: "${searchTx}"`;
-    mySales = state.sales.filter(s => {
-      // Cek apakah nama produk cocok
-      const matchProduk = (s.produk || '').toLowerCase().includes(searchTx);
-      
-      // Cek apakah nama customer atau no HP cocok (berdasarkan customerId)
-      let matchCust = false;
-      if (s.customerId) {
-        const cust = state.customers.find(c => c.id === s.customerId);
-        if (cust) {
-          const namaMatch = (cust.nama || '').toLowerCase().includes(searchTx);
-          const hpMatch = (cust.noHP || '').includes(searchTx);
-          matchCust = namaMatch || hpMatch;
-        }
-      }
-      return matchProduk || matchCust;
-    });
-  } else {
+if (searchTx) {
+  titleHist.textContent = `Hasil Pencarian Customer: "${searchTx}"`;
+  
+  // 1. Cari ID Customer yang namanya atau No HP-nya cocok dengan pencarian
+  const matchedCustIds = state.customers
+    .filter(c => 
+      (c.nama || '').toLowerCase().includes(searchTx) || 
+      (c.noHP || '').includes(searchTx)
+    )
+    .map(c => c.id);
+
+  // 2. Tampilkan transaksi HANYA JIKA ID Customer-nya ada di daftar yang cocok
+  mySales = state.sales.filter(s => matchedCustIds.includes(s.customerId));
+} else {
     // Jika kolom pencarian kosong, tampilkan transaksi bulan ini saja
     titleHist.textContent = 'Riwayat Transaksi Bulan Ini';
     mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan);
