@@ -156,7 +156,7 @@ textarea{resize:vertical;min-height:80px}
   
   <div class="section-title" id="dash-history-title">Riwayat Transaksi Bulan Ini</div>
   <div class="search-bar">
-    <input id="dash-search-tx" placeholder="Cari nama customer / no HP..." oninput="renderHistory()">
+    <input id="dash-search-tx" placeholder="Cari nama, no HP, brand, produk..." oninput="renderHistory()">
   </div>
   <div id="dash-history"></div>
 </section>
@@ -220,7 +220,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="muted">Total data lokal:</div>
     <div class="mt" style="font-size:13px" id="data-stats"></div>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON ke Download</button>
-    <div class="muted mt" style="font-size:11px">Versi 2.3 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 2.4 · ESTrack</div>
   </div>
 </section>
 
@@ -499,7 +499,7 @@ function renderDashboard(){
   const cls1=diffTotal>=0?'up':'down'; const cls2=diffElec>=0?'up':'down'; const arr1=diffTotal>=0?'↑':'↓'; const arr2=diffElec>=0?'↑':'↓';
   document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
   
-  renderHistory(); // Memanggil fungsi history terpisah
+  renderHistory();
   updateSyncDot();
 }
 
@@ -512,20 +512,37 @@ function renderHistory() {
 
   if (searchTx.length > 0) {
     titleHist.textContent = `Hasil Pencarian: "${searchTx}"`;
+    
+    // FILTER PENCARIAN YANG LEBIH KUAT (Mencakup Brand, Produk, Nama, No HP)
     mySales = state.sales.filter(s => {
-      if (!s.customerId) return false;
-      const cust = state.customers.find(c => c.id === s.customerId);
-      if (!cust) return false;
-      return (cust.nama || '').toLowerCase().includes(searchTx) || (cust.noHP || '').includes(searchTx);
+      // 1. Cek Brand (contoh: "Electrolux")
+      const matchBrand = (s.brand || '').toLowerCase().includes(searchTx);
+      
+      // 2. Cek Nama Produk
+      const matchProduk = (s.produk || '').toLowerCase().includes(searchTx);
+
+      // 3. Cek Customer (Nama atau No HP) - Menggunakan String() untuk antisipasi ID angka/teks
+      let matchCust = false;
+      if (s.customerId) {
+        const cust = state.customers.find(c => String(c.id) === String(s.customerId));
+        if (cust) {
+          const cName = (cust.nama || '').toLowerCase();
+          const cPhone = String(cust.noHP || '');
+          matchCust = cName.includes(searchTx) || cPhone.includes(searchTx);
+        }
+      }
+      
+      return matchBrand || matchProduk || matchCust;
     });
   } else {
     titleHist.textContent = 'Riwayat Transaksi Bulan Ini';
-    mySales = state.sales.filter(s => String(s.tanggal).slice(0,7) === bulan);
+    mySales = state.sales.filter(s => String(s.tanggal).slice(0, 7) === bulan);
   }
 
-  mySales.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  // Urutkan dari yang terbaru
+  mySales.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-  // Limit 10 baris jika tidak sedang mencari
+  // Limit 10 baris HANYA jika tidak sedang mencari
   if (!searchTx && mySales.length > 10) {
     mySales = mySales.slice(0, 10);
   }
@@ -537,7 +554,7 @@ function renderHistory() {
     histEl.innerHTML = mySales.map(s => {
       let custName = '';
       if(s.customerId) {
-        const c = state.customers.find(x => x.id === s.customerId);
+        const c = state.customers.find(x => String(x.id) === String(s.customerId));
         if(c) custName = c.nama;
       }
       return `
@@ -577,8 +594,6 @@ function openEditSaleModal(id) {
   openModal('modal-edit-sale');
 }
 
-function onEditBrandChange() {} // Opsional, untuk mengubah kategori otomatis jika diperlukan
-
 function calcEditTotal() {
   const q = Number(document.getElementById('edit-sale-qty').value) || 0;
   const h = Number(document.getElementById('edit-sale-harga').value) || 0;
@@ -599,29 +614,16 @@ async function saveEditSale() {
 
   const total = qty * harga;
   const isElectrolux = brand === 'Electrolux';
-
   const payload = { id, tanggal, brand, produk, kategori, qty, harga, total, catatan, isElectrolux };
 
   if (navigator.onLine) {
-    try {
-      await callApi('updateSale', payload);
-    } catch(e) {
-      toast('⚠️ Gagal update ke server: ' + e.message, 'error');
-      return;
-    }
+    try { await callApi('updateSale', payload); } catch(e) { toast('⚠️ Gagal update ke server: ' + e.message, 'error'); return; }
   }
 
   const s = state.sales.find(x => x.id === id);
-  if(s) {
-    Object.assign(s, payload);
-    s._synced = navigator.onLine;
-    await idbPut('sales', s);
-  }
+  if(s) { Object.assign(s, payload); s._synced = navigator.onLine; await idbPut('sales', s); }
 
-  await loadLocal();
-  closeModal('modal-edit-sale');
-  renderDashboard();
-  toast('✅ Transaksi diperbarui', 'success');
+  await loadLocal(); closeModal('modal-edit-sale'); renderDashboard(); toast('✅ Transaksi diperbarui', 'success');
 }
 
 function shiftMonth(ym,delta){ let [y,m]=ym.split('-').map(Number); m+=delta; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+'-'+String(m).padStart(2,'0'); }
@@ -637,7 +639,6 @@ function drawChart(){
   line('total','#FFD700'); line('elec','#1E90FF');
 }
 
-// SALE MODAL
 function openSaleModal(){
   currentCart = []; renderCart();
   document.getElementById('sale-tanggal').value=todayStr(); document.getElementById('sale-cust-nama').value=''; document.getElementById('sale-cust-hp').value=''; document.getElementById('sale-cust-alamat').value=''; document.getElementById('sale-catatan').value=''; document.getElementById('sale-sudah-elec').checked=false;
