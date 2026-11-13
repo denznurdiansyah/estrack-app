@@ -164,9 +164,11 @@ textarea{resize:vertical;min-height:80px}
   <div id="dash-history"></div>
 </section>
 
+<!-- TAB KATALOG PRODUK (ALL BRAND) -->
 <section id="tab-products" class="tab">
-  <div class="search-bar"><input id="prod-search" placeholder="Cari produk..." oninput="renderProducts()"></div>
-  <button class="btn primary mb" onclick="openProductModal()">➕ Tambah Produk Electrolux</button>
+  <div class="search-bar"><input id="prod-search" placeholder="Cari nama, brand, atau kategori..." oninput="renderProducts()"></div>
+  <div class="filters" id="prod-filters"></div>
+  <button class="btn primary mb" onclick="openProductModal()">➕ Tambah Produk Baru</button>
   <div id="prod-list"></div>
 </section>
 
@@ -226,14 +228,14 @@ textarea{resize:vertical;min-height:80px}
     <div class="muted">Total data lokal:</div>
     <div class="mt" style="font-size:13px" id="data-stats"></div>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON ke Download</button>
-    <div class="muted mt" style="font-size:11px">Versi 2.5 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 2.6 · ESTrack</div>
   </div>
 </section>
 
 <button id="fab" onclick="openSaleModal()" title="Input Penjualan">+</button>
 <nav id="bottom-nav">
   <button class="nav-btn active" data-tab="dashboard" onclick="navigateTo('dashboard')"><span class="ic">📊</span>Dashboard</button>
-  <button class="nav-btn" data-tab="products" onclick="navigateTo('products')"><span class="ic">🛍️</span>Produk</button>
+  <button class="nav-btn" data-tab="products" onclick="navigateTo('products')"><span class="ic">🛍️</span>Katalog</button>
   <button class="nav-btn" data-tab="customers" onclick="navigateTo('customers')"><span class="ic">👥</span>Customer <span id="nav-badge-cust" class="nav-badge">0</span></button>
   <button class="nav-btn" data-tab="settings" onclick="navigateTo('settings')"><span class="ic">⚙️</span>Setting</button>
 </nav>
@@ -259,14 +261,15 @@ textarea{resize:vertical;min-height:80px}
       </div>
       <div class="section-title">🛒 Keranjang Belanja</div>
       <div id="sale-cart-list" style="margin-bottom:12px"></div>
+      
       <div class="card" style="background:var(--bg2);border:1px solid var(--border);border-style:dashed">
         <div class="label">Tambah Produk ke Keranjang</div>
         <div class="field inline">
           <div><label>Brand</label><select id="sale-brand" onchange="onBrandChange()"></select></div>
           <div><label>Kategori</label><select id="sale-kategori"></select></div>
         </div>
-        <div class="field" id="sale-prod-picker-wrap" style="display:none">
-          <label>Pilih Produk Electrolux (opsional)</label>
+        <div class="field" id="sale-prod-picker-wrap">
+          <label>Pilih dari Katalog (Opsional)</label>
           <select id="sale-prod-picker" onchange="onProdPick()"><option value="">— Pilih dari katalog —</option></select>
         </div>
         <div class="field"><label>Nama Produk</label><input id="sale-produk" placeholder="Nama barang"></div>
@@ -274,8 +277,15 @@ textarea{resize:vertical;min-height:80px}
           <div><label>Qty</label><input type="number" id="sale-qty" value="1" min="1" inputmode="numeric" oninput="calcTotal()"></div>
           <div><label>Harga Satuan</label><input type="number" id="sale-harga" inputmode="numeric" placeholder="0" oninput="calcTotal()"></div>
         </div>
-        <button class="btn secondary" onclick="addCartItem()" style="background:rgba(30,144,255,.2);color:#4FA3FF;border:1px solid rgba(30,144,255,.3)">+ Tambahkan ke Keranjang</button>
+        <div class="field" style="margin-top:8px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="sale-save-catalog" style="width:auto;accent-color:#22c55e" checked>
+            <span style="color:var(--green);font-size:12px">Simpan Produk ini ke Katalog (Otomatis)</span>
+          </label>
+        </div>
+        <button class="btn secondary mt" onclick="addCartItem()" style="background:rgba(30,144,255,.2);color:#4FA3FF;border:1px solid rgba(30,144,255,.3)">+ Tambahkan ke Keranjang</button>
       </div>
+      
       <div class="card" style="background:var(--bg3);margin-top:16px;margin-bottom:12px">
         <div class="row" style="align-items:center">
           <div class="label">Total Keranjang</div>
@@ -356,6 +366,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="modal-content">
       <input type="hidden" id="prod-id">
       <input type="hidden" id="prod-img-url">
+      <div class="field"><label>Brand</label><select id="prod-brand"></select></div>
       <div class="field"><label>Nama Produk</label><input id="prod-nama" placeholder="contoh: Mesin Cuci EWF-8025"></div>
       <div class="field"><label>Kategori</label><select id="prod-kategori"></select></div>
       <div class="field"><label>Harga (Rp)</label><input type="number" id="prod-harga" inputmode="numeric" placeholder="0"></div>
@@ -392,10 +403,11 @@ textarea{resize:vertical;min-height:80px}
 <div id="toast"></div>
 
 <script>
-const DB_NAME='estrack_db', DB_VER=2; // Naik ke versi 2 untuk tabel templates
+const DB_NAME='estrack_db', DB_VER=2; 
 let db=null;
 let state={sales:[],customers:[],products:[],targets:[],followup:[],masterData:[],templates:[],settings:{}};
 let custFilter='all';
+let prodFilterBrand='all'; // Filter untuk katalog
 let pendingImageBase64=null;
 let currentCart=[];
 
@@ -446,7 +458,7 @@ function normalizePhone(p){ if(!p) return ''; p=String(p).replace(/[^\d+]/g,'').
 function toast(msg,type=''){ const t=document.getElementById('toast'); t.textContent=msg; t.className='show '+type; clearTimeout(t._t); t._t=setTimeout(()=>t.className='',2200); }
 function updateSyncDot(){
   const dot=document.getElementById('sync-dot'); if(!dot) return;
-  const pending=state.sales.filter(x=>!x._synced).length + state.customers.filter(x=>!x._synced).length + state.followup.filter(x=>!x._synced).length;
+  const pending=state.sales.filter(x=>!x._synced).length + state.customers.filter(x=>!x._synced).length + state.followup.filter(x=>!x._synced).length + state.products.filter(x=>!x._synced).length;
   if(!navigator.onLine) dot.className='sync-dot offline'; else if(pending>0) dot.className='sync-dot pending'; else dot.className='sync-dot';
 }
 
@@ -465,7 +477,7 @@ async function loadLocal(){
     defC.forEach(c=>state.masterData.push({id:uuid(),type:'kategori',value:c}));
   }
   if(state.templates.length === 0) {
-    state.templates.push({id:uuid(), kategori:'Umum', judul:'Sapaan Awal', pesan:'Halo Kak {nama}, saya dari Electrolux Electronic Square Sukabumi. Ada yang bisa saya bantu terkait produk Electrolux? 😊'});
+    state.templates.push({id:uuid(), kategori:'Umum', judul:'Sapaan Awal', pesan:'Halo Kak {nama}, saya dari Electronic Square Sukabumi. Ada yang bisa saya bantu? 😊'});
   }
   updateReminderBadge();
 }
@@ -473,12 +485,8 @@ async function loadLocal(){
 function updateReminderBadge() {
   const belumFU = state.customers.filter(c => c.statusFollowUp !== 'sudah').length;
   const badge = document.getElementById('nav-badge-cust');
-  if (belumFU > 0) {
-    badge.textContent = belumFU > 99 ? '99+' : belumFU;
-    badge.style.display = 'block';
-  } else {
-    badge.style.display = 'none';
-  }
+  if (belumFU > 0) { badge.textContent = belumFU > 99 ? '99+' : belumFU; badge.style.display = 'block'; } 
+  else { badge.style.display = 'none'; }
 }
 
 let syncing=false;
@@ -486,10 +494,15 @@ async function syncAll(silent=false){
   if(syncing||!navigator.onLine) return;
   syncing=true; updateSyncDot();
   try{
-    const unS=state.sales.filter(x=>!x._synced); const unC=state.customers.filter(x=>!x._synced); const unF=state.followup.filter(x=>!x._synced);
-    if(unS.length||unC.length||unF.length){
-      await callApi('syncBatch',{ sales:unS, customers:unC, followup:unF });
-      await Promise.all([ idbBulkPut('sales',unS.map(x=>({...x,_synced:true}))), idbBulkPut('customers',unC.map(x=>({...x,_synced:true}))), idbBulkPut('followup',unF.map(x=>({...x,_synced:true}))) ]);
+    const unS=state.sales.filter(x=>!x._synced); const unC=state.customers.filter(x=>!x._synced); const unF=state.followup.filter(x=>!x._synced); const unP=state.products.filter(x=>!x._synced);
+    if(unS.length||unC.length||unF.length||unP.length){
+      await callApi('syncBatch',{ sales:unS, customers:unC, followup:unF, products:unP });
+      await Promise.all([ 
+        idbBulkPut('sales',unS.map(x=>({...x,_synced:true}))), 
+        idbBulkPut('customers',unC.map(x=>({...x,_synced:true}))), 
+        idbBulkPut('followup',unF.map(x=>({...x,_synced:true}))),
+        idbBulkPut('products',unP.map(x=>({...x,_synced:true})))
+      ]);
     }
     const data=await callApi('getAll');
     const clearStore = (store) => new Promise((res, rej) => { const req = tx(store,'readwrite').clear(); req.onsuccess = () => res(); req.onerror = () => rej(req.error); });
@@ -508,7 +521,7 @@ async function syncAll(silent=false){
     await Promise.all([
       idbBulkPut('sales',mapped.sales.concat(state.sales.filter(x=>!x._synced))),
       idbBulkPut('customers',mapped.customers.concat(state.customers.filter(x=>!x._synced))),
-      idbBulkPut('products',mapped.products),
+      idbBulkPut('products',mapped.products.concat(state.products.filter(x=>!x._synced))),
       idbBulkPut('targets',mapped.targets),
       idbBulkPut('followup',mapped.followup.concat(state.followup.filter(x=>!x._synced))),
       idbBulkPut('masterData',mapped.masterData),
@@ -524,7 +537,7 @@ async function syncAll(silent=false){
 function navigateTo(tab){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); document.getElementById('tab-'+tab).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-  const titles={dashboard:'Dashboard',products:'Produk',customers:'Customers',settings:'Setting'};
+  const titles={dashboard:'Dashboard',products:'Katalog Produk',customers:'Customers',settings:'Setting'};
   document.getElementById('header-title').textContent=titles[tab]||'';
   if(tab==='dashboard'){renderDashboard();drawChart();} if(tab==='products') renderProducts(); if(tab==='customers') renderCustomers(); if(tab==='settings') renderSettings();
   window.scrollTo({top:0,behavior:'smooth'});
@@ -571,18 +584,104 @@ function renderHistory() {
   }
 }
 
-// --- FITUR AUTO-FILL CUSTOMER ---
-function autoFillCustomer() {
-  const hp = document.getElementById('sale-cust-hp').value;
-  if(!hp) return;
-  const norm = normalizePhone(hp);
-  const c = state.customers.find(x => normalizePhone(x.noHP) === norm);
-  if(c) {
-    document.getElementById('sale-cust-nama').value = c.nama || '';
-    document.getElementById('sale-cust-alamat').value = c.alamat || '';
-    document.getElementById('sale-sudah-elec').checked = c.sudahBeliElectrolux || false;
-    toast('✅ Data customer terisi otomatis');
+// --- KATALOG PRODUK UNIVERSAL ---
+function renderProducts(){
+  // 1. Render Filter Brand
+  const filterEl = document.getElementById('prod-filters');
+  const brands = state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value));
+  let filtersHtml = `<button class="${prodFilterBrand==='all'?'active':''}" onclick="setProdFilter('all')">Semua Brand</button>`;
+  brands.forEach(b => {
+    filtersHtml += `<button class="${prodFilterBrand===b.value?'active':''}" onclick="setProdFilter('${esc(b.value)}')">${esc(b.value)}</button>`;
+  });
+  filterEl.innerHTML = filtersHtml;
+
+  // 2. Filter Data
+  const q=(document.getElementById('prod-search').value||'').toLowerCase();
+  const list=state.products.filter(p=> {
+    if (prodFilterBrand !== 'all' && p.brand !== prodFilterBrand) return false;
+    if (!q) return true;
+    return (p.namaProduk||'').toLowerCase().includes(q) || (p.kategori||'').toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q);
+  }).sort((a,b)=>(a.namaProduk||'').localeCompare(b.namaProduk||''));
+
+  // 3. Render List
+  const el=document.getElementById('prod-list');
+  if(!list.length){ 
+    el.innerHTML='<div class="empty"><div class="em">📦</div><div>Produk tidak ditemukan</div><div class="mt muted">Coba ganti filter atau kata kunci</div></div>'; 
+    return; 
   }
+  el.innerHTML=list.map(p=>`
+    <div class="item" onclick="openProductModal('${p.id}')">
+      ${p.imageUrl ? `<img src="${p.imageUrl}" class="item-icon" alt="img">` : `<div class="item-icon">🔷</div>`}
+      <div class="item-body">
+        <div class="item-title">${esc(p.namaProduk)} <span class="badge ${p.brand==='Electrolux'?'electrolux':'non'}">${esc(p.brand)}</span></div>
+        <div class="item-sub">${esc(p.kategori)} · ${esc((p.sellingPoint||'').slice(0,50))}</div>
+      </div>
+      <div class="item-price">${fmtRpShort(p.harga)}</div>
+    </div>
+  `).join('');
+}
+
+function setProdFilter(brand) {
+  prodFilterBrand = brand;
+  renderProducts();
+}
+
+function openProductModal(id){
+  document.getElementById('img-preview').style.display = 'none'; document.getElementById('img-status').textContent = ''; pendingImageBase64 = null;
+  
+  const selBrand = document.getElementById('prod-brand'); selBrand.innerHTML = '';
+  const selKat = document.getElementById('prod-kategori'); selKat.innerHTML = '';
+  state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).forEach(b=>selBrand.innerHTML += `<option value="${esc(b.value)}">${esc(b.value)}</option>`);
+  state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).forEach(k=>selKat.innerHTML += `<option value="${esc(k.value)}">${esc(k.value)}</option>`);
+
+  if(id){ 
+    const p=state.products.find(x=>x.id===id); if(!p) return; 
+    document.getElementById('prod-modal-title').textContent='Edit Produk'; document.getElementById('prod-id').value=p.id; 
+    document.getElementById('prod-brand').value=p.brand||'Electrolux';
+    document.getElementById('prod-nama').value=p.namaProduk||''; document.getElementById('prod-kategori').value=p.kategori||''; 
+    document.getElementById('prod-harga').value=p.harga||''; document.getElementById('prod-selling').value=p.sellingPoint||''; 
+    document.getElementById('prod-img-url').value = p.imageUrl || ''; 
+    if(p.imageUrl) { document.getElementById('img-preview').src = p.imageUrl; document.getElementById('img-preview').style.display = 'block'; } 
+    document.getElementById('prod-delete-btn').style.display='block'; 
+  }
+  else { 
+    document.getElementById('prod-modal-title').textContent='Tambah Produk Baru'; document.getElementById('prod-id').value=''; 
+    document.getElementById('prod-brand').value='Electrolux';
+    document.getElementById('prod-nama').value=''; document.getElementById('prod-harga').value=''; document.getElementById('prod-selling').value=''; 
+    document.getElementById('prod-img-url').value = ''; document.getElementById('prod-delete-btn').style.display='none'; 
+  }
+  openModal('modal-product');
+}
+
+function handleImageUpload(event) {
+  const file = event.target.files[0]; if(!file) return; document.getElementById('img-status').textContent = 'Memproses gambar...';
+  const reader = new FileReader(); reader.onload = function(e) { const img = new Image(); img.onload = function() { const canvas = document.createElement('canvas'); let width = img.width, height = img.height; if (width > 400) { height = Math.round((height * 400) / width); width = 400; } canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height); const base64Str = canvas.toDataURL('image/jpeg', 0.7); pendingImageBase64 = base64Str.split(',')[1]; document.getElementById('img-preview').src = base64Str; document.getElementById('img-preview').style.display = 'block'; document.getElementById('img-status').textContent = 'Gambar siap disimpan.'; }; img.src = e.target.result; }; reader.readAsDataURL(file);
+}
+async function saveProduct(){
+  const id=document.getElementById('prod-id').value; 
+  const brand=document.getElementById('prod-brand').value; 
+  const namaProduk=document.getElementById('prod-nama').value.trim(); 
+  const kategori=document.getElementById('prod-kategori').value; 
+  const harga=Number(document.getElementById('prod-harga').value)||0; 
+  const sellingPoint=document.getElementById('prod-selling').value.trim(); 
+  let imageUrl = document.getElementById('prod-img-url').value;
+  
+  if(!namaProduk){toast('Nama produk wajib','error');return;} if(harga<1){toast('Harga wajib','error');return;}
+  
+  if(navigator.onLine){ 
+    try{ 
+      if (pendingImageBase64) { toast('⏳ Mengunggah foto ke Drive...'); document.getElementById('img-status').textContent = 'Mengunggah ke Drive...'; const res = await callApi('uploadImage', { base64: pendingImageBase64, mimeType: 'image/jpeg', filename: 'prod_'+Date.now()+'.jpg' }); imageUrl = res.url; } 
+      await callApi('updateProduct',{id:id||null,brand,namaProduk,kategori,harga,sellingPoint,imageUrl}); 
+      await syncAll(true); 
+      toast('✅ Produk tersimpan','success'); 
+    }catch(e){toast('⚠️ '+e.message,'error');return;} 
+  } else { 
+    if(pendingImageBase64) toast('⚠️ Foto hanya bisa diunggah saat Online','error'); 
+    if(id){ const p=state.products.find(x=>x.id===id); if(p){p.brand=brand;p.namaProduk=namaProduk;p.kategori=kategori;p.harga=harga;p.sellingPoint=sellingPoint;p._synced=false;} await idbPut('products',p); } 
+    else { await idbPut('products',{id:uuid(),brand,namaProduk,kategori,harga,sellingPoint,imageUrl,updatedAt:new Date().toISOString(),_synced:false}); } 
+    toast('💾 Disimpan offline - sync nanti','success'); 
+  }
+  await loadLocal(); closeModal('modal-product'); renderProducts();
 }
 
 function openEditSaleModal(id) {
@@ -623,7 +722,6 @@ function drawChart(){
   line('total','#FFD700'); line('elec','#1E90FF');
 }
 
-// --- FITUR MULTI TEMPLATE & REMINDER ---
 function renderCustomers(){
   const q=(document.getElementById('cust-search').value||'').toLowerCase();
   const list=state.customers.filter(c=>{
@@ -634,12 +732,8 @@ function renderCustomers(){
   if(!list.length){ el.innerHTML='<div class="empty"><div class="em">👥</div><div>Belum ada customer</div><div class="mt muted">Tap tombol di atas untuk menambah</div></div>'; return; }
   el.innerHTML=list.map(c=>{
     const isSudah=c.statusFollowUp==='sudah';
-    // Cek umur prospek (jika belum FU dan dibuat > 3 hari lalu)
     let isUrgent = false;
-    if(!isSudah && c.createdAt) {
-      const diffDays = Math.floor((new Date() - new Date(c.createdAt)) / (1000 * 60 * 60 * 24));
-      if(diffDays >= 3) isUrgent = true;
-    }
+    if(!isSudah && c.createdAt) { const diffDays = Math.floor((new Date() - new Date(c.createdAt)) / (1000 * 60 * 60 * 24)); if(diffDays >= 3) isUrgent = true; }
     return `<div class="item">
       <div class="item-icon" onclick="openCustomerModal('${c.id}')" style="cursor:pointer">👤</div>
       <div class="item-body" onclick="openCustomerModal('${c.id}')" style="cursor:pointer">
@@ -652,120 +746,67 @@ function renderCustomers(){
   }).join('');
 }
 
-// FITUR KIRIM WA DENGAN PILIHAN TEMPLATE
 function openPickWA(custId) {
-  document.getElementById('pick-wa-cust-id').value = custId;
-  const listEl = document.getElementById('pick-wa-list');
-  const templates = state.templates || [];
-  
-  if(templates.length === 0) {
-    listEl.innerHTML = '<p class="muted">Belum ada template. Tambah di menu Setting.</p>';
-    return;
-  }
-  
-  listEl.innerHTML = templates.map(t => `
-    <div class="template-card" onclick="sendWA('${custId}', '${t.id}')">
-      <div style="font-size:10px;color:var(--blue2);text-transform:uppercase;font-weight:bold;margin-bottom:4px">${esc(t.kategori)}</div>
-      <div style="font-weight:bold;font-size:14px;margin-bottom:4px">${esc(t.judul)}</div>
-      <div class="muted" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${esc(t.pesan)}</div>
-    </div>
-  `).join('');
-  
+  document.getElementById('pick-wa-cust-id').value = custId; const listEl = document.getElementById('pick-wa-list'); const templates = state.templates || [];
+  if(templates.length === 0) { listEl.innerHTML = '<p class="muted">Belum ada template. Tambah di menu Setting.</p>'; return; }
+  listEl.innerHTML = templates.map(t => `<div class="template-card" onclick="sendWA('${custId}', '${t.id}')"><div style="font-size:10px;color:var(--blue2);text-transform:uppercase;font-weight:bold;margin-bottom:4px">${esc(t.kategori)}</div><div style="font-weight:bold;font-size:14px;margin-bottom:4px">${esc(t.judul)}</div><div class="muted" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${esc(t.pesan)}</div></div>`).join('');
   openModal('modal-pick-wa');
 }
 
 async function sendWA(custId, templateId) {
-  closeModal('modal-pick-wa');
-  const c = state.customers.find(x => x.id === custId); if(!c) return;
-  const phone = normalizePhone(c.noHP); if(!phone){toast('No HP tidak valid','error');return;}
-  
-  const tmpl = state.templates.find(x => x.id === templateId);
-  if(!tmpl) return;
-  
+  closeModal('modal-pick-wa'); const c = state.customers.find(x => x.id === custId); if(!c) return; const phone = normalizePhone(c.noHP); if(!phone){toast('No HP tidak valid','error');return;}
+  const tmpl = state.templates.find(x => x.id === templateId); if(!tmpl) return;
   const msg = tmpl.pesan.replace(/{nama}/g, c.nama || '').replace(/{produk}/g, c.produkDiminati || 'produk Electrolux');
   window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
-  
-  // Tandai sudah FU
   c.statusFollowUp='sudah'; c.terakhirFollowUp=new Date().toISOString(); c._synced=false; await idbPut('customers',c);
   await idbPut('followup',{id:uuid(),customerId:c.id,tanggal:todayStr(),pesan:msg,status:'terkirim',_synced:false});
   await loadLocal(); renderCustomers(); updateReminderBadge(); if(navigator.onLine) syncAll(true);
 }
 
-// SETTINGS & TEMPLATE WA MANAGEMENT
 function renderTemplates() {
   const el = document.getElementById('list-templates');
-  el.innerHTML = state.templates.map(t => `
-    <div class="template-card" onclick="openTemplateModal('${t.id}')">
-      <div style="font-size:10px;color:var(--blue2);text-transform:uppercase;font-weight:bold;margin-bottom:4px">${esc(t.kategori)}</div>
-      <div style="font-weight:bold;font-size:14px;margin-bottom:4px">${esc(t.judul)}</div>
-    </div>
-  `).join('');
+  el.innerHTML = state.templates.map(t => `<div class="template-card" onclick="openTemplateModal('${t.id}')"><div style="font-size:10px;color:var(--blue2);text-transform:uppercase;font-weight:bold;margin-bottom:4px">${esc(t.kategori)}</div><div style="font-weight:bold;font-size:14px;margin-bottom:4px">${esc(t.judul)}</div></div>`).join('');
 }
 
 function openTemplateModal(id) {
-  if(id) {
-    const t = state.templates.find(x => x.id === id);
-    if(!t) return;
-    document.getElementById('tmpl-modal-title').textContent = 'Edit Template';
-    document.getElementById('tmpl-id').value = t.id;
-    document.getElementById('tmpl-kategori').value = t.kategori;
-    document.getElementById('tmpl-judul').value = t.judul;
-    document.getElementById('tmpl-pesan').value = t.pesan;
-    document.getElementById('tmpl-delete-btn').style.display = 'block';
-  } else {
-    document.getElementById('tmpl-modal-title').textContent = 'Tambah Template';
-    document.getElementById('tmpl-id').value = '';
-    document.getElementById('tmpl-kategori').value = '';
-    document.getElementById('tmpl-judul').value = '';
-    document.getElementById('tmpl-pesan').value = '';
-    document.getElementById('tmpl-delete-btn').style.display = 'none';
-  }
+  if(id) { const t = state.templates.find(x => x.id === id); if(!t) return; document.getElementById('tmpl-modal-title').textContent = 'Edit Template'; document.getElementById('tmpl-id').value = t.id; document.getElementById('tmpl-kategori').value = t.kategori; document.getElementById('tmpl-judul').value = t.judul; document.getElementById('tmpl-pesan').value = t.pesan; document.getElementById('tmpl-delete-btn').style.display = 'block'; } 
+  else { document.getElementById('tmpl-modal-title').textContent = 'Tambah Template'; document.getElementById('tmpl-id').value = ''; document.getElementById('tmpl-kategori').value = ''; document.getElementById('tmpl-judul').value = ''; document.getElementById('tmpl-pesan').value = ''; document.getElementById('tmpl-delete-btn').style.display = 'none'; }
   openModal('modal-template');
 }
 
 async function saveTemplate() {
-  const id = document.getElementById('tmpl-id').value;
-  const kategori = document.getElementById('tmpl-kategori').value.trim();
-  const judul = document.getElementById('tmpl-judul').value.trim();
-  const pesan = document.getElementById('tmpl-pesan').value.trim();
+  const id = document.getElementById('tmpl-id').value; const kategori = document.getElementById('tmpl-kategori').value.trim(); const judul = document.getElementById('tmpl-judul').value.trim(); const pesan = document.getElementById('tmpl-pesan').value.trim();
   if(!kategori || !judul || !pesan) { toast('Isi semua kolom', 'error'); return; }
-  
   const payload = { id: id || null, kategori, judul, pesan };
-  if(navigator.onLine) {
-    try { await callApi('saveTemplate', payload); } catch(e) { toast('Gagal: '+e.message, 'error'); return; }
-  }
-  
-  if(id) {
-    const t = state.templates.find(x => x.id === id);
-    if(t) { Object.assign(t, payload); t._synced = navigator.onLine; await idbPut('templates', t); }
-  } else {
-    await idbPut('templates', { id: uuid(), kategori, judul, pesan, _synced: navigator.onLine });
-  }
-  
+  if(navigator.onLine) { try { await callApi('saveTemplate', payload); } catch(e) { toast('Gagal: '+e.message, 'error'); return; } }
+  if(id) { const t = state.templates.find(x => x.id === id); if(t) { Object.assign(t, payload); t._synced = navigator.onLine; await idbPut('templates', t); } } 
+  else { await idbPut('templates', { id: uuid(), kategori, judul, pesan, _synced: navigator.onLine }); }
   await loadLocal(); closeModal('modal-template'); renderTemplates(); toast('✅ Template tersimpan', 'success');
 }
 
 async function deleteTemplate() {
-  const id = document.getElementById('tmpl-id').value;
-  if(!id || !confirm('Hapus template ini?')) return;
-  if(navigator.onLine) {
-    try { await callApi('deleteTemplate', { id }); } catch(e) { toast('Gagal: '+e.message, 'error'); return; }
-  }
+  const id = document.getElementById('tmpl-id').value; if(!id || !confirm('Hapus template ini?')) return;
+  if(navigator.onLine) { try { await callApi('deleteTemplate', { id }); } catch(e) { toast('Gagal: '+e.message, 'error'); return; } }
   await idbDel('templates', id); await loadLocal(); closeModal('modal-template'); renderTemplates(); toast('🗑️ Template dihapus', 'success');
+}
+
+function autoFillCustomer() {
+  const hp = document.getElementById('sale-cust-hp').value; if(!hp) return;
+  const norm = normalizePhone(hp); const c = state.customers.find(x => normalizePhone(x.noHP) === norm);
+  if(c) { document.getElementById('sale-cust-nama').value = c.nama || ''; document.getElementById('sale-cust-alamat').value = c.alamat || ''; document.getElementById('sale-sudah-elec').checked = c.sudahBeliElectrolux || false; toast('✅ Data customer terisi otomatis'); }
 }
 
 function renderSettings(){
   document.getElementById('set-bulan').value=currentMonth(); const t=getTargetForMonth(currentMonth());
   document.getElementById('set-target-elec').value=t.elec; document.getElementById('set-target-toko').value=t.toko;
   document.getElementById('sync-status').textContent=navigator.onLine?'Online':'Offline';
-  const pending=state.sales.filter(x=>!x._synced).length + state.customers.filter(x=>!x._synced).length + state.followup.filter(x=>!x._synced).length;
+  const pending=state.sales.filter(x=>!x._synced).length + state.customers.filter(x=>!x._synced).length + state.followup.filter(x=>!x._synced).length + state.products.filter(x=>!x._synced).length;
   document.getElementById('sync-detail').textContent=pending+' data pending sync';
   document.getElementById('data-stats').innerHTML=`📊 Sales: ${state.sales.length} · 👥 Customer: ${state.customers.length} · 🛍️ Produk: ${state.products.length} · 🎯 Target: ${state.targets.length}`;
   document.getElementById('set-bulan').onchange=()=>{ const t=getTargetForMonth(document.getElementById('set-bulan').value); document.getElementById('set-target-elec').value=t.elec; document.getElementById('set-target-toko').value=t.toko; };
   renderMasterData(); renderTemplates();
 }
 
-// SISA FUNGSI LAINNYA (SAMA SEPERTI SEBELUMNYA)
 function openSaleModal(){
   currentCart = []; renderCart();
   document.getElementById('sale-tanggal').value=todayStr(); document.getElementById('sale-cust-nama').value=''; document.getElementById('sale-cust-hp').value=''; document.getElementById('sale-cust-alamat').value=''; document.getElementById('sale-catatan').value=''; document.getElementById('sale-sudah-elec').checked=false;
@@ -776,9 +817,22 @@ function openSaleModal(){
   state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).forEach(k=>selKat.innerHTML += `<option value="${esc(k.value)}">${esc(k.value)}</option>`);
   onBrandChange(); openModal('modal-sale');
 }
+
+// Ubah Product Picker agar menampilkan produk dari brand terpilih
 function onBrandChange(){
-  const brand=document.getElementById('sale-brand').value; const wrap=document.getElementById('sale-prod-picker-wrap');
-  if(brand==='Electrolux'){ wrap.style.display='block'; const picker=document.getElementById('sale-prod-picker'); picker.innerHTML='<option value="">— Pilih dari katalog —</option>'; state.products.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; }); } else { wrap.style.display='none'; }
+  const brand=document.getElementById('sale-brand').value; 
+  const wrap=document.getElementById('sale-prod-picker-wrap');
+  const picker=document.getElementById('sale-prod-picker'); 
+  
+  wrap.style.display='block'; 
+  picker.innerHTML='<option value="">— Pilih dari katalog —</option>'; 
+  
+  const prods = state.products.filter(p => p.brand === brand);
+  if (prods.length === 0) {
+    picker.innerHTML = '<option value="">— Belum ada katalog —</option>';
+  } else {
+    prods.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; });
+  }
 }
 function onProdPick(){
   const id=document.getElementById('sale-prod-picker').value; if(!id) return; const p=state.products.find(x=>x.id===id); if(!p) return;
@@ -804,9 +858,12 @@ function addCartItem() {
   renderCart(); toast('✅ Masuk keranjang');
 }
 function removeCartItem(index) { currentCart.splice(index, 1); renderCart(); }
+
 async function saveSale(){
   const tanggal=document.getElementById('sale-tanggal').value||todayStr(); const custNama=document.getElementById('sale-cust-nama').value.trim(); const custHp=document.getElementById('sale-cust-hp').value.trim(); const custAlamat=document.getElementById('sale-cust-alamat').value.trim();
   const sudahElec=document.getElementById('sale-sudah-elec').checked; const catatan=document.getElementById('sale-catatan').value.trim();
+  const saveToCatalog = document.getElementById('sale-save-catalog').checked;
+  
   if(currentCart.length === 0) { toast('Keranjang belanja masih kosong', 'error'); return; }
   const orderId = 'SQ-' + new Date().getTime().toString().slice(-6); const namaSales = 'Sales 1'; 
   let customerId='';
@@ -815,37 +872,40 @@ async function saveSale(){
     if(existing){ customerId=existing.id; existing.statusFollowUp=sudahElec?'sudah':'belum'; existing.sudahBeliElectrolux = sudahElec || existing.sudahBeliElectrolux; existing._synced=false; await idbPut('customers',existing); }
     else { customerId=uuid(); await idbPut('customers',{id:customerId, nama:custNama, noHP:normPhone, alamat:custAlamat, brandDiminati:currentCart[0].brand, produkDiminati:currentCart[0].produk, statusFollowUp:sudahElec?'sudah':'belum', terakhirFollowUp:'', sudahBeliElectrolux:sudahElec, createdAt:new Date().toISOString(), _synced:false}); }
   }
+  
   const newSales = currentCart.map(item => ({ id: uuid(), orderId: orderId, namaSales: namaSales, tanggal, brand: item.brand, produk: item.produk, kategori: item.kategori, qty: item.qty, harga: item.harga, total: item.harga * item.qty, customerId, isElectrolux: item.isElectrolux, catatan, statusPembayaran: 'Pending', metodePembayaran: '', createdAt: new Date().toISOString(), _synced: false }));
+  
+  // AUTO-SAVE TO CATALOG
+  if (saveToCatalog) {
+    const newProds = [];
+    currentCart.forEach(item => {
+      const exists = state.products.find(p => p.brand.toLowerCase() === item.brand.toLowerCase() && p.namaProduk.toLowerCase() === item.produk.toLowerCase());
+      if (!exists) {
+        newProds.push({
+          id: uuid(),
+          brand: item.brand,
+          namaProduk: item.produk,
+          kategori: item.kategori,
+          harga: item.harga,
+          sellingPoint: '',
+          imageUrl: '',
+          updatedAt: new Date().toISOString(),
+          _synced: false
+        });
+      }
+    });
+    if (newProds.length) {
+      await idbBulkPut('products', newProds);
+      toast('✅ Produk baru ditambahkan ke Katalog');
+    }
+  }
+
   await idbBulkPut('sales', newSales);
   await loadLocal(); closeModal('modal-sale'); toast(navigator.onLine?'✅ Pesanan terkirim':'💾 Disimpan offline','success'); refreshUI(); if(navigator.onLine) syncAll(true);
 }
+
 async function deleteSale(id) { if(!confirm('Yakin ingin menghapus transaksi ini?')) return; if(navigator.onLine){ try { await callApi('deleteSale', { id: id }); } catch(e) { toast('⚠️ Gagal hapus di server: ' + e.message, 'error'); return; } } await idbDel('sales', id); await loadLocal(); refreshUI(); toast('🗑️ Transaksi dihapus', 'success'); }
-function renderProducts(){
-  const q=(document.getElementById('prod-search').value||'').toLowerCase();
-  const list=state.products.filter(p=> !q || (p.namaProduk||'').toLowerCase().includes(q) || (p.kategori||'').toLowerCase().includes(q) ).sort((a,b)=>(a.namaProduk||'').localeCompare(b.namaProduk||''));
-  const el=document.getElementById('prod-list');
-  if(!list.length){ el.innerHTML='<div class="empty"><div class="em">📦</div><div>Belum ada produk Electrolux</div><div class="mt muted">Tap tombol di atas untuk menambah</div></div>'; return; }
-  el.innerHTML=list.map(p=>`<div class="item" onclick="openProductModal('${p.id}')">${p.imageUrl ? `<img src="${p.imageUrl}" class="item-icon" alt="img">` : `<div class="item-icon">🔷</div>`}<div class="item-body"><div class="item-title">${esc(p.namaProduk)}</div><div class="item-sub">${esc(p.kategori)} · ${esc((p.sellingPoint||'').slice(0,50))}</div></div><div class="item-price">${fmtRpShort(p.harga)}</div></div>`).join('');
-}
-function openProductModal(id){
-  document.getElementById('img-preview').style.display = 'none'; document.getElementById('img-status').textContent = ''; pendingImageBase64 = null;
-  const selKat = document.getElementById('prod-kategori'); selKat.innerHTML = '';
-  state.masterData.filter(m=>m.type==='kategori').sort((a,b)=>a.value.localeCompare(b.value)).forEach(k=>selKat.innerHTML += `<option value="${esc(k.value)}">${esc(k.value)}</option>`);
-  if(id){ const p=state.products.find(x=>x.id===id); if(!p) return; document.getElementById('prod-modal-title').textContent='Edit Produk'; document.getElementById('prod-id').value=p.id; document.getElementById('prod-nama').value=p.namaProduk||''; document.getElementById('prod-kategori').value=p.kategori||'Mesin Cuci'; document.getElementById('prod-harga').value=p.harga||''; document.getElementById('prod-selling').value=p.sellingPoint||''; document.getElementById('prod-img-url').value = p.imageUrl || ''; if(p.imageUrl) { document.getElementById('img-preview').src = p.imageUrl; document.getElementById('img-preview').style.display = 'block'; } document.getElementById('prod-delete-btn').style.display='block'; }
-  else { document.getElementById('prod-modal-title').textContent='Tambah Produk'; document.getElementById('prod-id').value=''; document.getElementById('prod-nama').value=''; document.getElementById('prod-harga').value=''; document.getElementById('prod-selling').value=''; document.getElementById('prod-img-url').value = ''; document.getElementById('prod-delete-btn').style.display='none'; }
-  openModal('modal-product');
-}
-function handleImageUpload(event) {
-  const file = event.target.files[0]; if(!file) return; document.getElementById('img-status').textContent = 'Memproses gambar...';
-  const reader = new FileReader(); reader.onload = function(e) { const img = new Image(); img.onload = function() { const canvas = document.createElement('canvas'); let width = img.width, height = img.height; if (width > 400) { height = Math.round((height * 400) / width); width = 400; } canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height); const base64Str = canvas.toDataURL('image/jpeg', 0.7); pendingImageBase64 = base64Str.split(',')[1]; document.getElementById('img-preview').src = base64Str; document.getElementById('img-preview').style.display = 'block'; document.getElementById('img-status').textContent = 'Gambar siap disimpan.'; }; img.src = e.target.result; }; reader.readAsDataURL(file);
-}
-async function saveProduct(){
-  const id=document.getElementById('prod-id').value; const namaProduk=document.getElementById('prod-nama').value.trim(); const kategori=document.getElementById('prod-kategori').value; const harga=Number(document.getElementById('prod-harga').value)||0; const sellingPoint=document.getElementById('prod-selling').value.trim(); let imageUrl = document.getElementById('prod-img-url').value;
-  if(!namaProduk){toast('Nama produk wajib','error');return;} if(harga<1){toast('Harga wajib','error');return;}
-  if(navigator.onLine){ try{ if (pendingImageBase64) { toast('⏳ Mengunggah foto ke Drive...'); document.getElementById('img-status').textContent = 'Mengunggah ke Drive...'; const res = await callApi('uploadImage', { base64: pendingImageBase64, mimeType: 'image/jpeg', filename: 'prod_'+Date.now()+'.jpg' }); imageUrl = res.url; } await callApi('updateProduct',{id:id||null,brand:'Electrolux',namaProduk,kategori,harga,sellingPoint,imageUrl}); await syncAll(true); toast('✅ Produk tersimpan','success'); }catch(e){toast('⚠️ '+e.message,'error');return;} } else { if(pendingImageBase64) toast('⚠️ Foto hanya bisa diunggah saat Online','error'); if(id){ const p=state.products.find(x=>x.id===id); if(p){p.namaProduk=namaProduk;p.kategori=kategori;p.harga=harga;p.sellingPoint=sellingPoint;p._synced=false;} await idbPut('products',p); } else { await idbPut('products',{id:uuid(),brand:'Electrolux',namaProduk,kategori,harga,sellingPoint,imageUrl,updatedAt:new Date().toISOString(),_synced:false}); } toast('💾 Disimpan offline - sync nanti','success'); }
-  await loadLocal(); closeModal('modal-product'); renderProducts();
-}
-async function deleteProduct(){ const id=document.getElementById('prod-id').value; if(!id) return; if(!confirm('Yakin hapus produk ini?')) return; if(navigator.onLine){ try{ await callApi('deleteProduct',{id}); }catch(e){toast('⚠️ '+e.message,'error');return;} } await idbDel('products',id); await loadLocal(); closeModal('modal-product'); renderProducts(); toast('🗑️ Produk dihapus','success'); }
+
 function openCustomerModal(id){
   const selBrand = document.getElementById('cust-brand-diminati'); selBrand.innerHTML = '<option value="">- Pilih Brand -</option>';
   state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).forEach(b=>selBrand.innerHTML += `<option value="${esc(b.value)}">${esc(b.value)}</option>`);
