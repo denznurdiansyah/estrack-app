@@ -1,4 +1,4 @@
-const CACHE_NAME = 'estrack-v12';
+const CACHE_NAME = 'estrack-v13';
 const assets = [
   './',
   './index.html',
