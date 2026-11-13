@@ -1,4 +1,4 @@
-const CACHE_NAME = 'estrack-v14';
+const CACHE_NAME = 'estrack-v15'; // Versi dinaikkan
 const assets = [
   './',
   './index.html',
@@ -11,6 +11,13 @@ self.addEventListener('install', e => {
       return cache.addAll(assets);
     })
   );
+});
+
+// Mendengarkan perintah dari index.html untuk langsung update
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', e => {
