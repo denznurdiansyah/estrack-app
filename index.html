@@ -118,9 +118,13 @@ textarea{resize:vertical;min-height:80px}
 .cart-item-price{font-size:13px;font-weight:700;color:var(--gold);margin-right:10px;white-space:nowrap}
 .template-card{border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;cursor:pointer;background:var(--bg2);}
 .template-card:active{background:var(--bg3);}
+#update-banner{display:none; position:fixed; top:0; left:0; right:0; background:linear-gradient(90deg,#1E90FF,#FFD700); color:#0F1115; padding:12px; text-align:center; z-index:10000; cursor:pointer; font-weight:bold; box-shadow:0 4px 10px rgba(0,0,0,0.3);}
 </style>
 </head>
 <body>
+
+<!-- BANNER UPDATE ALERT -->
+<div id="update-banner" onclick="applyUpdate()">✨ Versi baru tersedia! Ketuk untuk update.</div>
 
 <div id="splash"><h1>ESTrack</h1><p>Electronic Square Tracker</p></div>
 
@@ -145,6 +149,8 @@ textarea{resize:vertical;min-height:80px}
       <div class="value blue" style="font-size:16px" id="dash-elec">Rp 0</div>
       <div class="progress blue mt"><div id="dash-elec-bar"></div></div>
       <div class="muted mt" id="dash-elec-pct">0% dari 135jt</div>
+      <!-- FITUR PACING HARIAN -->
+      <div class="mt" style="font-size:10px;font-weight:bold;color:var(--gold);background:rgba(255,215,0,0.1);padding:4px 6px;border-radius:6px;display:inline-block;" id="dash-elec-pacing"></div>
     </div>
     <div class="card">
       <div class="label">Non-Electrolux</div>
@@ -164,7 +170,6 @@ textarea{resize:vertical;min-height:80px}
   <div id="dash-history"></div>
 </section>
 
-<!-- TAB KATALOG PRODUK (ALL BRAND) -->
 <section id="tab-products" class="tab">
   <div class="search-bar"><input id="prod-search" placeholder="Cari nama, brand, atau kategori..." oninput="renderProducts()"></div>
   <div class="filters" id="prod-filters"></div>
@@ -227,8 +232,10 @@ textarea{resize:vertical;min-height:80px}
   <div class="card">
     <div class="muted">Total data lokal:</div>
     <div class="mt" style="font-size:13px" id="data-stats"></div>
-    <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON ke Download</button>
-    <div class="muted mt" style="font-size:11px">Versi 2.6 · ESTrack</div>
+    <!-- FITUR EXPORT CSV -->
+    <button class="btn secondary mt" onclick="exportCSV()" style="background:rgba(34,197,94,0.1);color:var(--green);border-color:rgba(34,197,94,0.3)">📥 Download Laporan Bulan Ini (CSV)</button>
+    <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON (Semua Data)</button>
+    <div class="muted mt" style="font-size:11px">Versi 2.7 · ESTrack</div>
   </div>
 </section>
 
@@ -407,13 +414,29 @@ const DB_NAME='estrack_db', DB_VER=2;
 let db=null;
 let state={sales:[],customers:[],products:[],targets:[],followup:[],masterData:[],templates:[],settings:{}};
 let custFilter='all';
-let prodFilterBrand='all'; // Filter untuk katalog
+let prodFilterBrand='all'; 
 let pendingImageBase64=null;
 let currentCart=[];
 
+// --- FITUR PWA UPDATE ALERT ---
+let newWorker;
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW gagal', err)); });
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          document.getElementById('update-banner').style.display = 'block';
+        }
+      });
+    });
+  });
 }
+function applyUpdate() {
+  if (newWorker) { newWorker.postMessage({ type: 'SKIP_WAITING' }); }
+  window.location.reload();
+}
+// ------------------------------
 
 function openDB(){
   return new Promise((res,rej)=>{
@@ -551,7 +574,30 @@ function renderDashboard(){
   const total=sumMonth(bulan); const elec=sumMonth(bulan,true); const non=sumMonth(bulan,false); const transaksi=state.sales.filter(s=>String(s.tanggal).slice(0,7)===bulan).length;
   document.getElementById('dash-total').innerHTML=fmtRp(total)+' <span class="sub">/ '+fmtRp(target.toko)+'</span>';
   const pctToko=Math.min(100,Math.round(total/target.toko*100)); document.getElementById('dash-total-bar').style.width=pctToko+'%'; document.getElementById('dash-total-pct').textContent=pctToko+'%'; document.getElementById('dash-total-sisa').textContent='Sisa: '+fmtRp(Math.max(0,target.toko-total));
-  document.getElementById('dash-elec').textContent=fmtRp(elec); const pctElec=Math.min(100,Math.round(elec/target.elec*100)); document.getElementById('dash-elec-bar').style.width=pctElec+'%'; document.getElementById('dash-elec-pct').textContent=pctElec+'% dari '+fmtRpShort(target.elec);
+  
+  document.getElementById('dash-elec').textContent=fmtRp(elec); 
+  const pctElec=Math.min(100,Math.round(elec/target.elec*100)); 
+  document.getElementById('dash-elec-bar').style.width=pctElec+'%'; 
+  document.getElementById('dash-elec-pct').textContent=pctElec+'% dari '+fmtRpShort(target.elec);
+  
+  // FITUR PACING HARIAN
+  const today = new Date();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const currentDay = today.getDate();
+  const remainingDays = daysInMonth - currentDay + 1; 
+  const remainingElecTarget = Math.max(0, target.elec - elec);
+  const dailyPacing = remainingElecTarget / remainingDays;
+  
+  const pacingEl = document.getElementById('dash-elec-pacing');
+  if(remainingElecTarget > 0) {
+    pacingEl.innerHTML = `🎯 Butuh <b>${fmtRpShort(dailyPacing)}/hari</b> (Sisa ${remainingDays} hari)`;
+  } else {
+    pacingEl.innerHTML = `🎉 Target Electrolux Tercapai!`;
+    pacingEl.style.color = 'var(--green)';
+    pacingEl.style.background = 'rgba(34,197,94,0.1)';
+  }
+  // -------------------------
+
   document.getElementById('dash-non').textContent=fmtRp(non); document.getElementById('dash-transaksi').textContent=transaksi+' transaksi';
   const prevM=shiftMonth(bulan,-1); const prevTotal=sumMonth(prevM); const prevElec=sumMonth(prevM,true); const diffTotal=total-prevTotal; const diffElec=elec-prevElec;
   const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
@@ -584,18 +630,13 @@ function renderHistory() {
   }
 }
 
-// --- KATALOG PRODUK UNIVERSAL ---
 function renderProducts(){
-  // 1. Render Filter Brand
   const filterEl = document.getElementById('prod-filters');
   const brands = state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value));
   let filtersHtml = `<button class="${prodFilterBrand==='all'?'active':''}" onclick="setProdFilter('all')">Semua Brand</button>`;
-  brands.forEach(b => {
-    filtersHtml += `<button class="${prodFilterBrand===b.value?'active':''}" onclick="setProdFilter('${esc(b.value)}')">${esc(b.value)}</button>`;
-  });
+  brands.forEach(b => { filtersHtml += `<button class="${prodFilterBrand===b.value?'active':''}" onclick="setProdFilter('${esc(b.value)}')">${esc(b.value)}</button>`; });
   filterEl.innerHTML = filtersHtml;
 
-  // 2. Filter Data
   const q=(document.getElementById('prod-search').value||'').toLowerCase();
   const list=state.products.filter(p=> {
     if (prodFilterBrand !== 'all' && p.brand !== prodFilterBrand) return false;
@@ -603,12 +644,8 @@ function renderProducts(){
     return (p.namaProduk||'').toLowerCase().includes(q) || (p.kategori||'').toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q);
   }).sort((a,b)=>(a.namaProduk||'').localeCompare(b.namaProduk||''));
 
-  // 3. Render List
   const el=document.getElementById('prod-list');
-  if(!list.length){ 
-    el.innerHTML='<div class="empty"><div class="em">📦</div><div>Produk tidak ditemukan</div><div class="mt muted">Coba ganti filter atau kata kunci</div></div>'; 
-    return; 
-  }
+  if(!list.length){ el.innerHTML='<div class="empty"><div class="em">📦</div><div>Produk tidak ditemukan</div><div class="mt muted">Coba ganti filter atau kata kunci</div></div>'; return; }
   el.innerHTML=list.map(p=>`
     <div class="item" onclick="openProductModal('${p.id}')">
       ${p.imageUrl ? `<img src="${p.imageUrl}" class="item-icon" alt="img">` : `<div class="item-icon">🔷</div>`}
@@ -620,15 +657,10 @@ function renderProducts(){
     </div>
   `).join('');
 }
-
-function setProdFilter(brand) {
-  prodFilterBrand = brand;
-  renderProducts();
-}
+function setProdFilter(brand) { prodFilterBrand = brand; renderProducts(); }
 
 function openProductModal(id){
   document.getElementById('img-preview').style.display = 'none'; document.getElementById('img-status').textContent = ''; pendingImageBase64 = null;
-  
   const selBrand = document.getElementById('prod-brand'); selBrand.innerHTML = '';
   const selKat = document.getElementById('prod-kategori'); selKat.innerHTML = '';
   state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value)).forEach(b=>selBrand.innerHTML += `<option value="${esc(b.value)}">${esc(b.value)}</option>`);
@@ -683,6 +715,7 @@ async function saveProduct(){
   }
   await loadLocal(); closeModal('modal-product'); renderProducts();
 }
+async function deleteProduct(){ const id=document.getElementById('prod-id').value; if(!id) return; if(!confirm('Yakin hapus produk ini?')) return; if(navigator.onLine){ try{ await callApi('deleteProduct',{id}); }catch(e){toast('⚠️ '+e.message,'error');return;} } await idbDel('products',id); await loadLocal(); closeModal('modal-product'); renderProducts(); toast('🗑️ Produk dihapus','success'); }
 
 function openEditSaleModal(id) {
   const s = state.sales.find(x => x.id === id); if(!s) return;
@@ -807,6 +840,45 @@ function renderSettings(){
   renderMasterData(); renderTemplates();
 }
 
+// --- FITUR EXPORT CSV ---
+function exportCSV() {
+  const bulan = currentMonth();
+  const mySales = state.sales.filter(s => String(s.tanggal).slice(0, 7) === bulan);
+  
+  if (mySales.length === 0) { toast('Tidak ada data penjualan bulan ini', 'error'); return; }
+  
+  // Header CSV
+  let csv = "Tanggal,Brand,Produk,Kategori,Qty,Harga,Total,Nama Customer,No HP,Catatan\n";
+  
+  // Baris Data
+  mySales.forEach(s => {
+    let custName = "";
+    let custHp = "";
+    if (s.customerId) {
+      const c = state.customers.find(x => String(x.id) === String(s.customerId));
+      if (c) { custName = c.nama || ""; custHp = c.noHP || ""; }
+    }
+    
+    // Fungsi untuk membungkus teks dalam tanda kutip (mencegah error jika ada koma di nama)
+    const escapeCSV = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
+    
+    csv += `${s.tanggal},${escapeCSV(s.brand)},${escapeCSV(s.produk)},${escapeCSV(s.kategori)},${s.qty},${s.harga},${s.total},${escapeCSV(custName)},${escapeCSV(custHp)},${escapeCSV(s.catatan)}\n`;
+  });
+  
+  // Tambahkan BOM agar Excel bisa membaca karakter dengan benar
+  const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `Laporan_ESTrack_${bulan}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  toast('📥 Laporan CSV berhasil didownload', 'success');
+}
+// -------------------------
+
 function openSaleModal(){
   currentCart = []; renderCart();
   document.getElementById('sale-tanggal').value=todayStr(); document.getElementById('sale-cust-nama').value=''; document.getElementById('sale-cust-hp').value=''; document.getElementById('sale-cust-alamat').value=''; document.getElementById('sale-catatan').value=''; document.getElementById('sale-sudah-elec').checked=false;
@@ -818,7 +890,6 @@ function openSaleModal(){
   onBrandChange(); openModal('modal-sale');
 }
 
-// Ubah Product Picker agar menampilkan produk dari brand terpilih
 function onBrandChange(){
   const brand=document.getElementById('sale-brand').value; 
   const wrap=document.getElementById('sale-prod-picker-wrap');
@@ -875,29 +946,15 @@ async function saveSale(){
   
   const newSales = currentCart.map(item => ({ id: uuid(), orderId: orderId, namaSales: namaSales, tanggal, brand: item.brand, produk: item.produk, kategori: item.kategori, qty: item.qty, harga: item.harga, total: item.harga * item.qty, customerId, isElectrolux: item.isElectrolux, catatan, statusPembayaran: 'Pending', metodePembayaran: '', createdAt: new Date().toISOString(), _synced: false }));
   
-  // AUTO-SAVE TO CATALOG
   if (saveToCatalog) {
     const newProds = [];
     currentCart.forEach(item => {
       const exists = state.products.find(p => p.brand.toLowerCase() === item.brand.toLowerCase() && p.namaProduk.toLowerCase() === item.produk.toLowerCase());
       if (!exists) {
-        newProds.push({
-          id: uuid(),
-          brand: item.brand,
-          namaProduk: item.produk,
-          kategori: item.kategori,
-          harga: item.harga,
-          sellingPoint: '',
-          imageUrl: '',
-          updatedAt: new Date().toISOString(),
-          _synced: false
-        });
+        newProds.push({ id: uuid(), brand: item.brand, namaProduk: item.produk, kategori: item.kategori, harga: item.harga, sellingPoint: '', imageUrl: '', updatedAt: new Date().toISOString(), _synced: false });
       }
     });
-    if (newProds.length) {
-      await idbBulkPut('products', newProds);
-      toast('✅ Produk baru ditambahkan ke Katalog');
-    }
+    if (newProds.length) { await idbBulkPut('products', newProds); toast('✅ Produk baru ditambahkan ke Katalog'); }
   }
 
   await idbBulkPut('sales', newSales);
