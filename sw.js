@@ -1,4 +1,4 @@
-const CACHE_NAME = 'estrack-v25'; // Versi dinaikkan
+const CACHE_NAME = 'estrack-v27'; // Versi dinaikkan
 const assets = [
   './',
   './index.html',
