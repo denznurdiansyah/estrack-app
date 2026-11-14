@@ -240,7 +240,7 @@ textarea{resize:vertical;min-height:80px}
     <!-- FITUR EXPORT CSV -->
     <button class="btn secondary mt" onclick="exportCSV()" style="background:rgba(34,197,94,0.1);color:var(--green);border-color:rgba(34,197,94,0.3)">📥 Download Laporan Bulan Ini (CSV)</button>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON (Semua Data)</button>
-    <div class="muted mt" style="font-size:11px">Versi 3.2 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 3.3 · ESTrack</div>
   </div>
 </section>
 
@@ -278,7 +278,8 @@ textarea{resize:vertical;min-height:80px}
         <div class="label">Tambah Produk ke Keranjang</div>
         <div class="field inline">
           <div><label>Brand</label><select id="sale-brand" onchange="onBrandChange()"></select></div>
-          <div><label>Kategori</label><select id="sale-kategori"></select></div>
+          <!-- TAMBAHAN ONCHANGE DI KATEGORI -->
+          <div><label>Kategori</label><select id="sale-kategori" onchange="onCategoryChange()"></select></div>
         </div>
         <div class="field" id="sale-prod-picker-wrap">
           <label>Pilih dari Katalog (Opsional)</label>
@@ -415,14 +416,14 @@ textarea{resize:vertical;min-height:80px}
 <div id="toast"></div>
 
 <script>
-const DB_NAME='estrack_db', DB_VER=4; 
+const DB_NAME='estrack_db', DB_VER=4; // Versi dinaikkan agar HP menghapus data lama
 let db=null;
 let state={sales:[],customers:[],products:[],targets:[],followup:[],masterData:[],templates:[],settings:{}};
 let custFilter='all';
 let prodFilterBrand='all'; 
 let pendingImageBase64=null;
 let currentCart=[];
-let showAllMonths = false; // Fitur darurat untuk melihat semua bulan
+let showAllMonths = false;
 
 // --- FITUR PWA UPDATE ALERT ---
 let newWorker;
@@ -964,18 +965,31 @@ function openSaleModal(){
   onBrandChange(); openModal('modal-sale');
 }
 
-function onBrandChange(){
-  const brand=document.getElementById('sale-brand').value; 
-  const wrap=document.getElementById('sale-prod-picker-wrap');
-  const picker=document.getElementById('sale-prod-picker'); 
+// UPDATE: Memanggil fungsi filter baru
+function onBrandChange() { updateSaleProductPicker(); }
+function onCategoryChange() { updateSaleProductPicker(); }
+
+function updateSaleProductPicker() {
+  const brand = document.getElementById('sale-brand').value; 
+  const kategori = document.getElementById('sale-kategori').value;
+  const wrap = document.getElementById('sale-prod-picker-wrap');
+  const picker = document.getElementById('sale-prod-picker'); 
   
   wrap.style.display='block'; 
   picker.innerHTML='<option value="">— Pilih dari katalog —</option>'; 
   
-  const prods = state.products.filter(p => p.brand === brand);
-  if (prods.length === 0) { picker.innerHTML = '<option value="">— Belum ada katalog —</option>'; } 
-  else { prods.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; }); }
+  if(!brand || !kategori) return;
+
+  // Filter ketat: Harus cocok Brand DAN Kategori-nya
+  const prods = state.products.filter(p => p.brand === brand && p.kategori === kategori);
+  
+  if (prods.length === 0) {
+    picker.innerHTML = '<option value="">— Tidak ada produk di kategori ini —</option>';
+  } else {
+    prods.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; });
+  }
 }
+
 function onProdPick(){
   const id=document.getElementById('sale-prod-picker').value; if(!id) return; const p=state.products.find(x=>x.id===id); if(!p) return;
   document.getElementById('sale-produk').value=p.namaProduk; document.getElementById('sale-kategori').value=p.kategori; document.getElementById('sale-harga').value=p.harga;
