@@ -168,6 +168,11 @@ textarea{resize:vertical;min-height:80px}
     <input id="dash-search-tx" placeholder="Cari nama, no HP, brand, produk..." oninput="renderHistory()">
   </div>
   <div id="dash-history"></div>
+  
+  <div style="text-align:center; margin-top:20px; margin-bottom:20px;">
+    <span class="muted" onclick="document.getElementById('debug-info').style.display = document.getElementById('debug-info').style.display === 'none' ? 'block' : 'none'" style="font-size:10px; cursor:pointer; text-decoration:underline;">[Cek Status Data Sistem]</span>
+    <div id="debug-info" style="font-size:10px; color:var(--muted); margin-top:10px; padding:10px; background:rgba(0,0,0,0.3); border-radius:8px; display:none; text-align:left; word-break:break-all;"></div>
+  </div>
 </section>
 
 <section id="tab-products" class="tab">
@@ -235,7 +240,7 @@ textarea{resize:vertical;min-height:80px}
     <!-- FITUR EXPORT CSV -->
     <button class="btn secondary mt" onclick="exportCSV()" style="background:rgba(34,197,94,0.1);color:var(--green);border-color:rgba(34,197,94,0.3)">📥 Download Laporan Bulan Ini (CSV)</button>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON (Semua Data)</button>
-    <div class="muted mt" style="font-size:11px">Versi 3.1 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 3.2 · ESTrack</div>
   </div>
 </section>
 
@@ -417,6 +422,7 @@ let custFilter='all';
 let prodFilterBrand='all'; 
 let pendingImageBase64=null;
 let currentCart=[];
+let showAllMonths = false; // Fitur darurat untuk melihat semua bulan
 
 // --- FITUR PWA UPDATE ALERT ---
 let newWorker;
@@ -472,7 +478,7 @@ function callApi(action, payload){
 }
 
 function uuid(){ if(crypto.randomUUID) return crypto.randomUUID(); return 'id-'+Date.now()+'-'+Math.random().toString(36).slice(2,10); }
-function todayStr(){ const d = new Date(); const jkt = new Date(d.toLocaleString('en-US', {timeZone: 'Asia/Jakarta'})); return jkt.getFullYear() + '-' + String(jkt.getMonth() + 1).padStart(2, '0') + '-' + String(jkt.getDate()).padStart(2, '0'); }
+function todayStr(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function currentMonth(){return todayStr().slice(0,7);}
 function fmtRp(n){ n=Math.round(Number(n)||0); return 'Rp '+n.toLocaleString('id-ID'); }
 function fmtRpShort(n){ const v=Number(n)||0; if(v>=1e9) return 'Rp '+(v/1e9).toFixed(1).replace('.',',')+'M'; if(v>=1e6) return 'Rp '+(v/1e6).toFixed(1).replace('.',',')+'jt'; if(v>=1e3) return 'Rp '+(v/1e3).toFixed(0)+'rb'; return fmtRp(v); }
@@ -485,7 +491,7 @@ function updateSyncDot(){
   if(!navigator.onLine) dot.className='sync-dot offline'; else if(pending>0) dot.className='sync-dot pending'; else dot.className='sync-dot';
 }
 
-// --- FUNGSI PENGAMAN TANGGAL (ANTI FORMAT BEDA) ---
+// FUNGSI PENGAMAN TANGGAL
 function getMonthKey(dateVal) {
   if (!dateVal) return '';
   if (dateVal instanceof Date) {
@@ -493,7 +499,8 @@ function getMonthKey(dateVal) {
   }
   let str = String(dateVal).trim();
   if (str.includes('T')) return str.slice(0, 7);
-  if (/^\d{4}-\d{2}/.test(str)) return str.slice(0, 7);
+  let match = str.match(/^(\d{4})-(\d{2})/);
+  if (match) return match[1] + '-' + match[2];
   let d = new Date(str);
   if (!isNaN(d.getTime())) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -502,14 +509,15 @@ function getMonthKey(dateVal) {
 }
 
 async function loadLocal(){
-  // PENGAMAN MATEMATIKA: Pastikan total, qty, harga selalu angka
+  // PENGAMAN MATEMATIKA: Pastikan total, qty, harga selalu angka murni
   state.sales = (await idbAll('sales')).map(s => ({
     ...s,
-    total: Number(s.total) || 0,
+    total: Number(String(s.total).replace(/[^0-9.-]+/g,"")) || 0,
     qty: Number(s.qty) || 1,
-    harga: Number(s.harga) || 0,
+    harga: Number(String(s.harga).replace(/[^0-9.-]+/g,"")) || 0,
     isElectrolux: String(s.isElectrolux).toUpperCase() === 'TRUE' || s.isElectrolux === true
   }));
+  
   state.customers = await idbAll('customers');
   state.products = await idbAll('products');
   state.targets = await idbAll('targets');
@@ -593,7 +601,6 @@ function navigateTo(tab){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
-// PENGAMAN MATEMATIKA: Menggunakan getMonthKey
 function sumMonth(monthKey,electroluxOnly=null){ 
   return state.sales.filter(s=>{ 
     if(getMonthKey(s.tanggal) !== monthKey) return false; 
@@ -638,12 +645,23 @@ function renderDashboard(){
   const pctTotalDiff=prevTotal>0?Math.round(diffTotal/prevTotal*100):(total>0?100:0); const pctElecDiff=prevElec>0?Math.round(diffElec/prevElec*100):(elec>0?100:0);
   const cls1=diffTotal>=0?'up':'down'; const cls2=diffElec>=0?'up':'down'; const arr1=diffTotal>=0?'↑':'↓'; const arr2=diffElec>=0?'↑':'↓';
   document.getElementById('dash-review').innerHTML=`<div class="muted mb">Bulan lalu (${bulanLabel(prevM)} ${prevM.slice(0,4)})</div><div class="row"><div><div class="label">Total</div><div class="value" style="font-size:15px">${fmtRpShort(prevTotal)}</div><div class="diff ${cls1}">${arr1} ${Math.abs(pctTotalDiff)}%</div></div><div><div class="label">Electrolux</div><div class="value blue" style="font-size:15px">${fmtRpShort(prevElec)}</div><div class="diff ${cls2}">${arr2} ${Math.abs(pctElecDiff)}%</div></div></div>`;
+  
+  // DEBUG INFO
+  const debugEl = document.getElementById('debug-info');
+  if (debugEl) {
+    debugEl.innerHTML = `Total Data: ${state.sales.length} <br> Bulan Sistem: ${bulan} <br> Tgl Data #1: ${state.sales.length > 0 ? String(state.sales[0].tanggal) : '-'} <br> Key Data #1: ${state.sales.length > 0 ? getMonthKey(state.sales[0].tanggal) : '-'} <br> Total Data #1: ${state.sales.length > 0 ? String(state.sales[0].total) : '-'}`;
+  }
+
   renderHistory(); updateSyncDot();
 }
 
 function renderHistory() {
-  const bulan=currentMonth(); const searchInput = document.getElementById('dash-search-tx'); const searchTx = searchInput ? searchInput.value.toLowerCase().trim() : '';
-  const titleHist = document.getElementById('dash-history-title'); let mySales = [];
+  const bulan=currentMonth(); 
+  const searchInput = document.getElementById('dash-search-tx'); 
+  const searchTx = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  const titleHist = document.getElementById('dash-history-title'); 
+  let mySales = [];
+  
   if (searchTx.length > 0) {
     titleHist.textContent = `Hasil Pencarian: "${searchTx}"`;
     mySales = state.sales.filter(s => {
@@ -652,11 +670,23 @@ function renderHistory() {
       if (s.customerId) { const cust = state.customers.find(c => String(c.id) === String(s.customerId)); if (cust) { const cName = (cust.nama || '').toLowerCase(); const cPhone = String(cust.noHP || ''); matchCust = cName.includes(searchTx) || cPhone.includes(searchTx); } }
       return matchBrand || matchProduk || matchCust;
     });
-  } else { titleHist.textContent = 'Riwayat Transaksi Bulan Ini'; mySales = state.sales.filter(s => getMonthKey(s.tanggal) === bulan); }
+  } else if (showAllMonths) {
+    titleHist.textContent = 'Semua Transaksi (Semua Bulan)';
+    mySales = state.sales;
+  } else { 
+    titleHist.textContent = 'Riwayat Transaksi Bulan Ini'; 
+    mySales = state.sales.filter(s => getMonthKey(s.tanggal) === bulan); 
+  }
+  
   mySales.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-  if (!searchTx && mySales.length > 10) mySales = mySales.slice(0, 10);
+  
   const histEl = document.getElementById('dash-history');
-  if(mySales.length === 0){ histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Data tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`; }
+  if(mySales.length === 0){ 
+    histEl.innerHTML = `<div class="muted text-center" style="padding:20px">${searchTx ? 'Data tidak ditemukan.' : 'Belum ada transaksi bulan ini'}</div>`; 
+    if (!searchTx && !showAllMonths && state.sales.length > 0) {
+       histEl.innerHTML += `<button class="btn secondary sm mt" onclick="showAllMonths = true; renderDashboard();" style="margin: 10px auto; display:block;">Tampilkan Semua Transaksi (Lintas Bulan)</button>`;
+    }
+  }
   else {
     histEl.innerHTML = mySales.map(s => {
       let custName = ''; if(s.customerId) { const c = state.customers.find(x => String(x.id) === String(s.customerId)); if(c) custName = c.nama; }
@@ -665,7 +695,6 @@ function renderHistory() {
   }
 }
 
-// --- KATALOG PRODUK UNIVERSAL DENGAN LOGO BRAND ---
 const BRAND_DOMAINS = {
   'Electrolux': 'electrolux.com', 'LG': 'lg.com', 'Toshiba': 'toshiba.com', 'Samsung': 'samsung.com', 'Sharp': 'sharp.com',
   'Polytron': 'polytron.co.id', 'Panasonic': 'panasonic.com', 'Modena': 'modena.com', 'Rinnai': 'rinnai.co.id', 'Beko': 'beko.com',
@@ -908,34 +937,18 @@ function exportCSV() {
   
   if (mySales.length === 0) { toast('Tidak ada data penjualan bulan ini', 'error'); return; }
   
-  // Header CSV
   let csv = "Tanggal,Brand,Produk,Kategori,Qty,Harga,Total,Nama Customer,No HP,Catatan\n";
-  
-  // Baris Data
   mySales.forEach(s => {
-    let custName = "";
-    let custHp = "";
-    if (s.customerId) {
-      const c = state.customers.find(x => String(x.id) === String(s.customerId));
-      if (c) { custName = c.nama || ""; custHp = c.noHP || ""; }
-    }
-    
-    // Fungsi untuk membungkus teks dalam tanda kutip (mencegah error jika ada koma di nama)
+    let custName = ""; let custHp = "";
+    if (s.customerId) { const c = state.customers.find(x => String(x.id) === String(s.customerId)); if (c) { custName = c.nama || ""; custHp = c.noHP || ""; } }
     const escapeCSV = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
-    
     csv += `${s.tanggal},${escapeCSV(s.brand)},${escapeCSV(s.produk)},${escapeCSV(s.kategori)},${s.qty},${s.harga},${s.total},${escapeCSV(custName)},${escapeCSV(custHp)},${escapeCSV(s.catatan)}\n`;
   });
   
-  // Tambahkan BOM agar Excel bisa membaca karakter dengan benar
   const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
-  link.setAttribute("href", url);
-  link.setAttribute("download", `Laporan_ESTrack_${bulan}.csv`);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const link = document.createElement("a"); const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url); link.setAttribute("download", `Laporan_ESTrack_${bulan}.csv`);
+  link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   toast('📥 Laporan CSV berhasil didownload', 'success');
 }
 // -------------------------
@@ -960,11 +973,8 @@ function onBrandChange(){
   picker.innerHTML='<option value="">— Pilih dari katalog —</option>'; 
   
   const prods = state.products.filter(p => p.brand === brand);
-  if (prods.length === 0) {
-    picker.innerHTML = '<option value="">— Belum ada katalog —</option>';
-  } else {
-    prods.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; });
-  }
+  if (prods.length === 0) { picker.innerHTML = '<option value="">— Belum ada katalog —</option>'; } 
+  else { prods.forEach(p=>{ picker.innerHTML += `<option value="${p.id}">${esc(p.namaProduk)} (${fmtRpShort(p.harga)})</option>`; }); }
 }
 function onProdPick(){
   const id=document.getElementById('sale-prod-picker').value; if(!id) return; const p=state.products.find(x=>x.id===id); if(!p) return;
@@ -1011,9 +1021,7 @@ async function saveSale(){
     const newProds = [];
     currentCart.forEach(item => {
       const exists = state.products.find(p => p.brand.toLowerCase() === item.brand.toLowerCase() && p.namaProduk.toLowerCase() === item.produk.toLowerCase());
-      if (!exists) {
-        newProds.push({ id: uuid(), brand: item.brand, namaProduk: item.produk, kategori: item.kategori, harga: item.harga, sellingPoint: '', imageUrl: '', updatedAt: new Date().toISOString(), _synced: false });
-      }
+      if (!exists) { newProds.push({ id: uuid(), brand: item.brand, namaProduk: item.produk, kategori: item.kategori, harga: item.harga, sellingPoint: '', imageUrl: '', updatedAt: new Date().toISOString(), _synced: false }); }
     });
     if (newProds.length) { await idbBulkPut('products', newProds); toast('✅ Produk baru ditambahkan ke Katalog'); }
   }
