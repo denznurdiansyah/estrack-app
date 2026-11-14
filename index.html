@@ -235,7 +235,7 @@ textarea{resize:vertical;min-height:80px}
     <!-- FITUR EXPORT CSV -->
     <button class="btn secondary mt" onclick="exportCSV()" style="background:rgba(34,197,94,0.1);color:var(--green);border-color:rgba(34,197,94,0.3)">📥 Download Laporan Bulan Ini (CSV)</button>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON (Semua Data)</button>
-    <div class="muted mt" style="font-size:11px">Versi 3.0 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 3.1 · ESTrack</div>
   </div>
 </section>
 
@@ -472,7 +472,7 @@ function callApi(action, payload){
 }
 
 function uuid(){ if(crypto.randomUUID) return crypto.randomUUID(); return 'id-'+Date.now()+'-'+Math.random().toString(36).slice(2,10); }
-function todayStr(){ const f=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}); return f.format(new Date()); }
+function todayStr(){ const d = new Date(); const jkt = new Date(d.toLocaleString('en-US', {timeZone: 'Asia/Jakarta'})); return jkt.getFullYear() + '-' + String(jkt.getMonth() + 1).padStart(2, '0') + '-' + String(jkt.getDate()).padStart(2, '0'); }
 function currentMonth(){return todayStr().slice(0,7);}
 function fmtRp(n){ n=Math.round(Number(n)||0); return 'Rp '+n.toLocaleString('id-ID'); }
 function fmtRpShort(n){ const v=Number(n)||0; if(v>=1e9) return 'Rp '+(v/1e9).toFixed(1).replace('.',',')+'M'; if(v>=1e6) return 'Rp '+(v/1e6).toFixed(1).replace('.',',')+'jt'; if(v>=1e3) return 'Rp '+(v/1e3).toFixed(0)+'rb'; return fmtRp(v); }
@@ -485,13 +485,40 @@ function updateSyncDot(){
   if(!navigator.onLine) dot.className='sync-dot offline'; else if(pending>0) dot.className='sync-dot pending'; else dot.className='sync-dot';
 }
 
+// --- FUNGSI PENGAMAN TANGGAL (ANTI FORMAT BEDA) ---
+function getMonthKey(dateVal) {
+  if (!dateVal) return '';
+  if (dateVal instanceof Date) {
+    return dateVal.getFullYear() + '-' + String(dateVal.getMonth() + 1).padStart(2, '0');
+  }
+  let str = String(dateVal).trim();
+  if (str.includes('T')) return str.slice(0, 7);
+  if (/^\d{4}-\d{2}/.test(str)) return str.slice(0, 7);
+  let d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  return str.slice(0, 7);
+}
+
 async function loadLocal(){
-  state.sales=await idbAll('sales'); state.customers=await idbAll('customers');
-  state.products=await idbAll('products'); state.targets=await idbAll('targets');
-  state.followup=await idbAll('followup'); state.masterData=await idbAll('masterData');
-  state.templates=await idbAll('templates');
-  const settings=await idbGet('meta','settings');
-  state.settings=settings&&settings.val?settings.val:{};
+  // PENGAMAN MATEMATIKA: Pastikan total, qty, harga selalu angka
+  state.sales = (await idbAll('sales')).map(s => ({
+    ...s,
+    total: Number(s.total) || 0,
+    qty: Number(s.qty) || 1,
+    harga: Number(s.harga) || 0,
+    isElectrolux: String(s.isElectrolux).toUpperCase() === 'TRUE' || s.isElectrolux === true
+  }));
+  state.customers = await idbAll('customers');
+  state.products = await idbAll('products');
+  state.targets = await idbAll('targets');
+  state.followup = await idbAll('followup');
+  state.masterData = await idbAll('masterData');
+  state.templates = await idbAll('templates');
+  
+  const settings = await idbGet('meta','settings');
+  state.settings = settings && settings.val ? settings.val : {};
   
   if(state.masterData.length === 0) {
     const defB = ['Electrolux','LG','Toshiba','Samsung','Sharp','Polytron','Lain-lain'];
@@ -531,7 +558,6 @@ async function syncAll(silent=false){
     const clearStore = (store) => new Promise((res, rej) => { const req = tx(store,'readwrite').clear(); req.onsuccess = () => res(); req.onerror = () => rej(req.error); });
     await Promise.all([ clearStore('sales'), clearStore('customers'), clearStore('products'), clearStore('targets'), clearStore('followup'), clearStore('masterData'), clearStore('templates') ]);
 
-    // PENAMBAHAN .filter() UNTUK MENCEGAH ERROR IDBObjectStore JIKA ADA DATA KOSONG
     const mapped={
       sales:(data.sales||[]).filter(s => s.id).map(s=>({...s,_synced:true,qty:Number(s.qty),harga:Number(s.harga),total:Number(s.total),isElectrolux:String(s.isElectrolux).toUpperCase()==='TRUE'})),
       customers:(data.customers||[]).filter(c => c.id).map(c=>({...c,_synced:true,sudahBeliElectrolux:String(c.sudahBeliElectrolux).toUpperCase()==='TRUE'})),
@@ -554,7 +580,7 @@ async function syncAll(silent=false){
 
     await loadLocal();
     if(!silent) toast('✅ Sinkronisasi berhasil','success');
-    setTimeout(() => { refreshUI(); }, 300); // Jeda sinkronisasi agar UI render sempurna
+    setTimeout(() => { refreshUI(); }, 300);
   }catch(e){ if(!silent) toast('⚠️ Sync gagal: '+e.message,'error'); } finally { syncing=false; updateSyncDot(); }
 }
 
@@ -567,12 +593,21 @@ function navigateTo(tab){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
-function sumMonth(monthKey,electroluxOnly=null){ return state.sales.filter(s=>{ if(String(s.tanggal).slice(0,7)!==monthKey) return false; if(electroluxOnly===true) return s.isElectrolux; if(electroluxOnly===false) return !s.isElectrolux; return true; }).reduce((a,b)=>a+Number(b.total||0),0); }
+// PENGAMAN MATEMATIKA: Menggunakan getMonthKey
+function sumMonth(monthKey,electroluxOnly=null){ 
+  return state.sales.filter(s=>{ 
+    if(getMonthKey(s.tanggal) !== monthKey) return false; 
+    if(electroluxOnly===true) return s.isElectrolux; 
+    if(electroluxOnly===false) return !s.isElectrolux; 
+    return true; 
+  }).reduce((a,b)=> a + (Number(b.total) || 0), 0); 
+}
+
 function getTargetForMonth(m){ const exact=state.targets.find(t=>String(t.bulan).slice(0,7)===m); if(exact) return {elec:Number(exact.targetElectrolux)||135000000,toko:Number(exact.targetToko)||250000000}; const sorted=state.targets.filter(t=>String(t.bulan).slice(0,7)<=m).sort((a,b)=>String(b.bulan).localeCompare(String(a.bulan))); if(sorted.length) return {elec:Number(sorted[0].targetElectrolux)||135000000,toko:Number(sorted[0].targetToko)||250000000}; return {elec:135000000,toko:250000000}; }
 
 function renderDashboard(){
   const bulan=currentMonth(); const target=getTargetForMonth(bulan);
-  const total=sumMonth(bulan); const elec=sumMonth(bulan,true); const non=sumMonth(bulan,false); const transaksi=state.sales.filter(s=>String(s.tanggal).slice(0,7)===bulan).length;
+  const total=sumMonth(bulan); const elec=sumMonth(bulan,true); const non=sumMonth(bulan,false); const transaksi=state.sales.filter(s=>getMonthKey(s.tanggal)===bulan).length;
   document.getElementById('dash-total').innerHTML=fmtRp(total)+' <span class="sub">/ '+fmtRp(target.toko)+'</span>';
   const pctToko=Math.min(100,Math.round(total/target.toko*100)); document.getElementById('dash-total-bar').style.width=pctToko+'%'; document.getElementById('dash-total-pct').textContent=pctToko+'%'; document.getElementById('dash-total-sisa').textContent='Sisa: '+fmtRp(Math.max(0,target.toko-total));
   
@@ -617,7 +652,7 @@ function renderHistory() {
       if (s.customerId) { const cust = state.customers.find(c => String(c.id) === String(s.customerId)); if (cust) { const cName = (cust.nama || '').toLowerCase(); const cPhone = String(cust.noHP || ''); matchCust = cName.includes(searchTx) || cPhone.includes(searchTx); } }
       return matchBrand || matchProduk || matchCust;
     });
-  } else { titleHist.textContent = 'Riwayat Transaksi Bulan Ini'; mySales = state.sales.filter(s => String(s.tanggal).slice(0, 7) === bulan); }
+  } else { titleHist.textContent = 'Riwayat Transaksi Bulan Ini'; mySales = state.sales.filter(s => getMonthKey(s.tanggal) === bulan); }
   mySales.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   if (!searchTx && mySales.length > 10) mySales = mySales.slice(0, 10);
   const histEl = document.getElementById('dash-history');
@@ -644,7 +679,6 @@ function getBrandLogo(brandName) {
 }
 
 function renderProducts(){
-  // 1. Render Filter Brand
   const filterEl = document.getElementById('prod-filters');
   const brands = state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value));
   let filtersHtml = `<button class="${prodFilterBrand==='all'?'active':''}" onclick="setProdFilter('all')">Semua Brand</button>`;
@@ -655,7 +689,6 @@ function renderProducts(){
   });
   filterEl.innerHTML = filtersHtml;
 
-  // 2. Filter Data
   const q=(document.getElementById('prod-search').value||'').toLowerCase();
   const list=state.products.filter(p=> {
     if (prodFilterBrand !== 'all' && p.brand !== prodFilterBrand) return false;
@@ -663,7 +696,6 @@ function renderProducts(){
     return (p.namaProduk||'').toLowerCase().includes(q) || (p.kategori||'').toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q);
   }).sort((a,b)=>(a.namaProduk||'').localeCompare(b.namaProduk||''));
 
-  // 3. Render List
   const el=document.getElementById('prod-list');
   if(!list.length){ el.innerHTML='<div class="empty"><div class="em">📦</div><div>Produk tidak ditemukan</div><div class="mt muted">Coba ganti filter atau kata kunci</div></div>'; return; }
   
@@ -872,7 +904,7 @@ function renderSettings(){
 // --- FITUR EXPORT CSV ---
 function exportCSV() {
   const bulan = currentMonth();
-  const mySales = state.sales.filter(s => String(s.tanggal).slice(0, 7) === bulan);
+  const mySales = state.sales.filter(s => getMonthKey(s.tanggal) === bulan);
   
   if (mySales.length === 0) { toast('Tidak ada data penjualan bulan ini', 'error'); return; }
   
