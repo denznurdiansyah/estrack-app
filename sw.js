@@ -1,4 +1,4 @@
-const CACHE_NAME = 'estrack-v30';
+const CACHE_NAME = 'estrack-v31';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
