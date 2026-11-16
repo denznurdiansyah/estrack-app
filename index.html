@@ -103,14 +103,19 @@ textarea{resize:vertical;min-height:80px}
 .search-bar input{padding-left:38px}
 .search-bar::before{content:'🔍';position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:14px;opacity:.5}
 .filters{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
-.filters button{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg2);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0}
+.filters button{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg2);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;display:inline-flex;align-items:center;gap:6px}
 .filters button.active{background:var(--grad);color:#0F1115;border-color:transparent}
 .text-center{text-align:center}
 .muted{color:var(--muted);font-size:12px}
 .mt{margin-top:12px}
 .mb{margin-bottom:12px}
 .tag{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);padding:4px 8px;border-radius:6px;font-size:12px;margin:0 4px 4px 0;border:1px solid var(--border)}
-.tag span{cursor:pointer;color:var(--red);font-weight:bold}
+.tag{gap:8px}
+.tag .del{cursor:pointer;color:var(--red);font-weight:bold}
+.brand-logo{display:inline-flex;align-items:center;justify-content:center;height:22px;min-width:22px;padding:2px 4px;border-radius:6px;background:#fff;vertical-align:middle;flex-shrink:0}
+.brand-logo img{height:18px;width:18px;object-fit:contain;display:block}
+.brand-logo.nologo{background:hsl(var(--h) 55% 34%);color:#fff;font-size:10px;font-weight:800;padding:2px 6px;letter-spacing:.3px}
+.brand-logo.nologo::after{content:attr(data-mono)}
 #img-preview{width:100px;height:100px;border-radius:10px;object-fit:cover;display:none;margin-top:10px;border:1px solid var(--border)}
 .cart-item{display:flex;justify-content:space-between;align-items:center;background:var(--bg3);padding:10px;border-radius:8px;margin-bottom:8px;border:1px solid var(--border)}
 .cart-item-info{flex:1;min-width:0}
@@ -139,14 +144,15 @@ textarea{resize:vertical;min-height:80px}
 
 <section id="tab-dashboard" class="tab active">
   <div class="card hero">
-    <div class="label">Pencapaian Toko Bulan Ini</div>
+    <div class="label">Pencapaian Toko Bulan Ini · Semua Brand</div>
     <div class="value grad" id="dash-total">Rp 0 <span class="sub" id="dash-total-sub">/ Rp 250.000.000</span></div>
     <div class="progress"><div id="dash-total-bar"></div></div>
     <div class="mt" style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
       <span id="dash-total-pct">0%</span>
       <span id="dash-total-sisa">Sisa: Rp 250.000.000</span>
     </div>
-    <div class="muted mt" id="dash-proyeksi"></div>
+    <div class="muted mt" id="dash-pacing-toko"></div>
+    <div class="muted" id="dash-proyeksi" style="margin-top:4px"></div>
   </div>
   <div class="grid2">
     <div class="card">
@@ -159,8 +165,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="card">
       <div class="label">Non-Electrolux</div>
       <div class="value gold" style="font-size:16px" id="dash-non">Rp 0</div>
-      <div class="progress gold mt"><div id="dash-non-bar"></div></div>
-      <div class="muted mt" id="dash-non-pct">0% dari total</div>
+      <div class="muted mt" id="dash-non-pct">Tanpa target</div>
       <div class="muted mt" id="dash-transaksi">0 transaksi</div>
     </div>
   </div>
@@ -208,8 +213,8 @@ textarea{resize:vertical;min-height:80px}
   <div class="section-title">Target Bulanan</div>
   <div class="card">
     <div class="field"><label>Pilih Bulan</label><input type="month" id="set-bulan"></div>
-    <div class="field"><label>Target Electrolux (Rp)</label><input type="number" id="set-target-elec" inputmode="numeric"></div>
-    <div class="field"><label>Target Toko (Rp)</label><input type="number" id="set-target-toko" inputmode="numeric"></div>
+    <div class="field"><label>Target Electrolux (Rp) · target utama</label><input type="number" id="set-target-elec" inputmode="numeric"></div>
+    <div class="field"><label>Target Toko (Rp) · akumulasi semua brand</label><input type="number" id="set-target-toko" inputmode="numeric"></div>
     <button class="btn primary" onclick="saveTarget()">💾 Simpan Target</button>
   </div>
 
@@ -681,6 +686,12 @@ function renderDashboard(){
     proyEl.textContent='📈 Proyeksi akhir bulan: '+fmtRpShort(proy)+' ('+Math.round(proy/target.toko*100)+'% target)';
   } else proyEl.textContent='';
 
+  // kebutuhan harian untuk target toko (akumulasi semua brand)
+  const sisaToko=Math.max(0,target.toko-total);
+  document.getElementById('dash-pacing-toko').textContent=sisaToko>0
+    ? '🎯 Butuh '+fmtRpShort(sisaToko/remainingDays)+'/hari untuk target toko (sisa '+remainingDays+' hari)'
+    : '🎉 Target toko tercapai!';
+
   document.getElementById('dash-elec').textContent=fmtRp(elec);
   const pctElec=Math.min(100,Math.round(elec/target.elec*100));
   document.getElementById('dash-elec-bar').style.width=pctElec+'%';
@@ -697,8 +708,7 @@ function renderDashboard(){
 
   document.getElementById('dash-non').textContent=fmtRp(non);
   const porsiNon=total>0?Math.round(non/total*100):0;
-  document.getElementById('dash-non-bar').style.width=porsiNon+'%';
-  document.getElementById('dash-non-pct').textContent=porsiNon+'% dari total';
+  document.getElementById('dash-non-pct').textContent=porsiNon+'% dari omzet toko · tanpa target';
   document.getElementById('dash-transaksi').textContent=transaksi+' transaksi';
 
   // kategori terlaris
@@ -752,7 +762,7 @@ function renderHistory(){
   const shown=mySales.slice(0,histLimit);
   histEl.innerHTML=shown.map(s=>{
     let custName=''; if(s.customerId){ const c=state.customers.find(x=>String(x.id)===String(s.customerId)); if(c) custName=c.nama; }
-    return `<div class="item"><div class="item-body"><div class="item-title">${esc(s.produk)} <span class="badge ${s.isElectrolux?'electrolux':'non'}">${esc(s.brand)}</span></div><div class="item-sub">${esc(s.tanggal)} · Qty: ${s.qty} ${custName?'· 👤 '+esc(custName):''}</div></div><div class="item-price" style="margin-right:5px">${fmtRpShort(s.total)}</div><button class="icon-btn edit" onclick="openEditSaleModal('${esc(s.id)}')">✏️</button><button class="icon-btn del" onclick="deleteSale('${esc(s.id)}')">🗑️</button></div>`;
+    return `<div class="item"><div class="item-body"><div class="item-title">${esc(s.produk)} ${brandLogo(s.brand)}</div><div class="item-sub">${esc(s.brand)} · ${esc(s.tanggal)} · Qty: ${s.qty} ${custName?'· 👤 '+esc(custName):''}</div></div><div class="item-price" style="margin-right:5px">${fmtRpShort(s.total)}</div><button class="icon-btn edit" onclick="openEditSaleModal('${esc(s.id)}')">✏️</button><button class="icon-btn del" onclick="deleteSale('${esc(s.id)}')">🗑️</button></div>`;
   }).join('');
   if(mySales.length>histLimit){
     histEl.innerHTML+=`<button class="btn secondary sm mt" onclick="histLimit+=50;renderHistory()" style="margin:10px auto;display:block;">Muat lagi (${mySales.length-histLimit} lagi)</button>`;
@@ -786,11 +796,40 @@ function drawChart(){
 
 // ---------- PRODUK ----------
 function cleanSP(s){ return String(s||'').replace(/^[\s\-–•·]+/,'').trim(); }
+
+// ---------- LOGO BRAND ----------
+// Logo diambil dari domain website brand. Jika gagal dimuat / offline / domain kosong -> tampil inisial berwarna.
+const BRAND_DOMAINS={
+  'Electrolux':'electrolux.com','LG':'lg.com','Toshiba':'toshiba.com','Samsung':'samsung.com','Sharp':'sharp.com',
+  'Polytron':'polytron.co.id','Panasonic':'panasonic.com','Modena':'modena.com','Rinnai':'rinnai.co.id','Beko':'beko.com',
+  'Gree':'gree.com','Midea':'midea.com','Changhong':'changhong.com','Denpoo':'denpoo.co.id','Cosmos':'cosmos.co.id',
+  'Miyako':'miyako.co.id','Flife':'flife.co.id','Domo':'domo.co.id','Steko':'steko.co.id','Artugo':'artugo.com',
+  'Aiwa':'aiwa.com','Ariston':'ariston.com'
+};
+function brandDomains(){ let c={}; try{ c=JSON.parse(localStorage.getItem('estrack_brand_domains')||'{}'); }catch(e){} return {...BRAND_DOMAINS,...c}; }
+function brandInitials(n){ const w=String(n).trim().split(/\s+/); return (w.length>1?w[0][0]+w[1][0]:String(n).trim().slice(0,2)).toUpperCase(); }
+function brandHue(n){ let h=0; for(const ch of String(n)) h=(h*31+ch.charCodeAt(0))%360; return h; }
+function brandLogo(name,edit){
+  if(!name) return '';
+  const d=brandDomains()[name];
+  const attrs=`data-mono="${esc(brandInitials(name))}" style="--h:${brandHue(name)}" title="${esc(name)}"`+(edit?` data-b="${esc(name)}" onclick="editBrandLogo(this.dataset.b)"`:'');
+  if(!d) return `<span class="brand-logo nologo" ${attrs}></span>`;
+  return `<span class="brand-logo" ${attrs}><img src="https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&url=http://${encodeURIComponent(d)}&size=128" loading="lazy" alt="" onerror="this.parentNode.classList.add('nologo');this.remove()"></span>`;
+}
+function editBrandLogo(name){
+  const cur=brandDomains()[name]||'';
+  const v=prompt('Domain website untuk logo "'+name+'" (contoh: lg.com).\nKosongkan untuk memakai inisial:',cur);
+  if(v===null) return;
+  let c={}; try{ c=JSON.parse(localStorage.getItem('estrack_brand_domains')||'{}'); }catch(e){}
+  c[name]=v.trim().replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+  try{ localStorage.setItem('estrack_brand_domains',JSON.stringify(c)); }catch(e){}
+  renderMasterData(); toast('✅ Logo diperbarui','success');
+}
 function renderProducts(){
   const filterEl=document.getElementById('prod-filters');
   const brands=state.masterData.filter(m=>m.type==='brand').sort((a,b)=>a.value.localeCompare(b.value));
   let filtersHtml=`<button class="${prodFilterBrand==='all'?'active':''}" onclick="setProdFilter('all')">Semua Brand</button>`;
-  brands.forEach(b=>{ filtersHtml+=`<button class="${prodFilterBrand===b.value?'active':''}" onclick="setProdFilter('${esc(b.value)}')">${esc(b.value)}</button>`; });
+  brands.forEach(b=>{ filtersHtml+=`<button class="${prodFilterBrand===b.value?'active':''}" onclick="setProdFilter('${esc(b.value)}')">${brandLogo(b.value)}<span>${esc(b.value)}</span></button>`; });
   filterEl.innerHTML=filtersHtml;
 
   const q=(document.getElementById('prod-search').value||'').toLowerCase();
@@ -810,7 +849,7 @@ function renderProducts(){
     return `<div class="item" onclick="openProductModal('${esc(p.id)}')">
       ${img}
       <div class="item-body">
-        <div class="item-title">${esc(p.namaProduk)} <span class="badge ${p.brand==='Electrolux'?'electrolux':'non'}">${esc(p.brand)}</span></div>
+        <div class="item-title">${esc(p.namaProduk)} ${brandLogo(p.brand)}</div>
         <div class="item-sub">${esc(sub)}</div>
       </div>
       <div class="item-price">${fmtRpShort(p.harga)}</div>
@@ -1062,7 +1101,7 @@ function renderSettings(){
   renderMasterData(); renderTemplates();
 }
 function renderMasterData(){
-  const mk=type=>state.masterData.filter(m=>m.type===type).sort((a,b)=>a.value.localeCompare(b.value)).map(m=>`<span class="tag">${esc(m.value)} <span onclick="delMaster('${esc(m.id)}')">×</span></span>`).join('');
+  const mk=type=>state.masterData.filter(m=>m.type===type).sort((a,b)=>a.value.localeCompare(b.value)).map(m=>`<span class="tag">${type==='brand'?brandLogo(m.value,true):''}${esc(m.value)} <span class="del" onclick="delMaster('${esc(m.id)}')">×</span></span>`).join('');
   document.getElementById('list-brands').innerHTML=mk('brand'); document.getElementById('list-categories').innerHTML=mk('kategori');
 }
 async function addMaster(type){
