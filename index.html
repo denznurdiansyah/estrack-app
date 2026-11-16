@@ -113,7 +113,7 @@ textarea{resize:vertical;min-height:80px}
 .tag{gap:8px}
 .tag .del{cursor:pointer;color:var(--red);font-weight:bold}
 .brand-logo{display:inline-flex;align-items:center;justify-content:center;height:22px;min-width:22px;padding:2px 4px;border-radius:6px;background:#fff;vertical-align:middle;flex-shrink:0}
-.brand-logo img{height:18px;width:18px;object-fit:contain;display:block}
+.brand-logo img{height:18px;width:auto;max-width:56px;object-fit:contain;display:block}
 .brand-logo.nologo{background:hsl(var(--h) 55% 34%);color:#fff;font-size:10px;font-weight:800;padding:2px 6px;letter-spacing:.3px}
 .brand-logo.nologo::after{content:attr(data-mono)}
 #img-preview{width:100px;height:100px;border-radius:10px;object-fit:cover;display:none;margin-top:10px;border:1px solid var(--border)}
@@ -255,7 +255,7 @@ textarea{resize:vertical;min-height:80px}
     <button class="btn secondary mt" onclick="exportCSV()" style="background:rgba(34,197,94,0.1);color:var(--green);border-color:rgba(34,197,94,0.3)">📥 Download Laporan Bulan Ini (CSV)</button>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON (Semua Data)</button>
     <button class="btn secondary mt" onclick="resetToken()">🔑 Ganti Kode Akses</button>
-    <div class="muted mt" style="font-size:11px">Versi 4.0 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 4.2 · ESTrack</div>
   </div>
 </section>
 
@@ -400,10 +400,15 @@ textarea{resize:vertical;min-height:80px}
       <input type="hidden" id="prod-id">
       <input type="hidden" id="prod-img-url">
       <div class="field"><label>Brand</label><select id="prod-brand"></select></div>
-      <div class="field"><label>Nama Produk</label><input id="prod-nama" placeholder="contoh: Mesin Cuci EWF-8025"></div>
+      <div class="field"><label>Nama Produk</label><input id="prod-nama" placeholder="contoh: Mesin Cuci EWF-8025" onchange="autoFillSellingPoint(true)"></div>
       <div class="field"><label>Kategori</label><select id="prod-kategori"></select></div>
       <div class="field"><label>Harga (Rp)</label><input type="number" id="prod-harga" inputmode="numeric" placeholder="0"></div>
-      <div class="field"><label>Selling Point</label><textarea id="prod-selling" rows="4" placeholder="Keunggulan produk..."></textarea></div>
+      <div class="field">
+        <label>Selling Point</label>
+        <textarea id="prod-selling" rows="4" placeholder="Keunggulan produk... (atau tekan tombol Isi Otomatis)"></textarea>
+        <button type="button" class="btn secondary sm mt" onclick="autoFillSellingPoint(false)">✨ Isi Otomatis dari Internet</button>
+        <div class="muted" id="sp-status" style="margin-top:6px"></div>
+      </div>
       <div class="field">
         <label>Foto Produk (Opsional)</label>
         <input type="file" id="prod-img-file" accept="image/png, image/jpeg" onchange="handleImageUpload(event)">
@@ -798,32 +803,96 @@ function drawChart(){
 function cleanSP(s){ return String(s||'').replace(/^[\s\-–•·]+/,'').trim(); }
 
 // ---------- LOGO BRAND ----------
-// Logo diambil dari domain website brand. Jika gagal dimuat / offline / domain kosong -> tampil inisial berwarna.
-const BRAND_DOMAINS={
-  'Electrolux':'electrolux.com','LG':'lg.com','Toshiba':'toshiba.com','Samsung':'samsung.com','Sharp':'sharp.com',
-  'Polytron':'polytron.co.id','Panasonic':'panasonic.com','Modena':'modena.com','Rinnai':'rinnai.co.id','Beko':'beko.com',
-  'Gree':'gree.com','Midea':'midea.com','Changhong':'changhong.com','Denpoo':'denpoo.co.id','Cosmos':'cosmos.co.id',
-  'Miyako':'miyako.co.id','Flife':'flife.co.id','Domo':'domo.co.id','Steko':'steko.co.id','Artugo':'artugo.com',
-  'Aiwa':'aiwa.com','Ariston':'ariston.com'
-};
-function brandDomains(){ let c={}; try{ c=JSON.parse(localStorage.getItem('estrack_brand_domains')||'{}'); }catch(e){} return {...BRAND_DOMAINS,...c}; }
+// Logo dipasang manual per brand (upload dari galeri, cukup sekali). Tanpa logo -> tampil inisial berwarna.
+let _logos=null;
+function getBrandLogos(){ if(!_logos){ try{ _logos=JSON.parse(localStorage.getItem('estrack_brand_logos')||'{}'); }catch(e){ _logos={}; } } return _logos; }
+function setBrandLogos(o){ _logos=o; try{ localStorage.setItem('estrack_brand_logos',JSON.stringify(o)); return true; }catch(e){ toast('Penyimpanan HP penuh','error'); return false; } }
 function brandInitials(n){ const w=String(n).trim().split(/\s+/); return (w.length>1?w[0][0]+w[1][0]:String(n).trim().slice(0,2)).toUpperCase(); }
 function brandHue(n){ let h=0; for(const ch of String(n)) h=(h*31+ch.charCodeAt(0))%360; return h; }
 function brandLogo(name,edit){
   if(!name) return '';
-  const d=brandDomains()[name];
-  const attrs=`data-mono="${esc(brandInitials(name))}" style="--h:${brandHue(name)}" title="${esc(name)}"`+(edit?` data-b="${esc(name)}" onclick="editBrandLogo(this.dataset.b)"`:'');
-  if(!d) return `<span class="brand-logo nologo" ${attrs}></span>`;
-  return `<span class="brand-logo" ${attrs}><img src="https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&url=http://${encodeURIComponent(d)}&size=128" loading="lazy" alt="" onerror="this.parentNode.classList.add('nologo');this.remove()"></span>`;
+  const url=getBrandLogos()[name];
+  const click=edit?` data-b="${esc(name)}" onclick="editBrandLogo(this.dataset.b)"`:'';
+  if(url) return `<span class="brand-logo" title="${esc(name)}"${click}><img src="${esc(url)}" alt=""></span>`;
+  return `<span class="brand-logo nologo" data-mono="${esc(brandInitials(name))}" style="--h:${brandHue(name)}" title="${esc(name)}"${click}></span>`;
 }
 function editBrandLogo(name){
-  const cur=brandDomains()[name]||'';
-  const v=prompt('Domain website untuk logo "'+name+'" (contoh: lg.com).\nKosongkan untuk memakai inisial:',cur);
-  if(v===null) return;
-  let c={}; try{ c=JSON.parse(localStorage.getItem('estrack_brand_domains')||'{}'); }catch(e){}
-  c[name]=v.trim().replace(/^https?:\/\//,'').replace(/\/.*$/,'');
-  try{ localStorage.setItem('estrack_brand_domains',JSON.stringify(c)); }catch(e){}
-  renderMasterData(); toast('✅ Logo diperbarui','success');
+  const logos=getBrandLogos();
+  if(logos[name] && !confirm('Ganti logo "'+name+'"?\n\nOK = pilih gambar baru\nBatal = hapus logo')){
+    const l={...logos}; delete l[name]; setBrandLogos(l); renderMasterData(); toast('Logo dihapus'); return;
+  }
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange=()=>{
+    const f=inp.files[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const sc=Math.min(1,160/Math.max(img.width,img.height));
+        const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(img.width*sc)); c.height=Math.max(1,Math.round(img.height*sc));
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        const l={...getBrandLogos()}; l[name]=c.toDataURL('image/png');
+        if(setBrandLogos(l)){ renderMasterData(); toast('✅ Logo disimpan','success'); }
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(f);
+  };
+  inp.click();
+}
+
+// ---------- GAMBAR PRODUK ----------
+// Gambar dibaca lewat Apps Script (bukan dipasang langsung dari link Drive), lalu disimpan di HP agar bisa dilihat offline.
+const imgInflight={}, imgFailed=new Set();
+function driveIdFromUrl(u){ const s=String(u||''); const m=s.match(/[?&]id=([\w-]+)/)||s.match(/\/d\/([\w-]+)/); return m?m[1]:''; }
+async function getImageSrc(url){
+  const id=driveIdFromUrl(url);
+  if(!id) return url||'';
+  const cached=await idbGet('meta','img:'+id);
+  if(cached&&cached.val) return cached.val;
+  if(imgFailed.has(id)) throw new Error('gagal');
+  if(!navigator.onLine) throw new Error('OFFLINE');
+  if(!imgInflight[id]){
+    imgInflight[id]=callApi('getImage',{id})
+      .then(async r=>{ await idbPut('meta',{key:'img:'+id,val:r.dataUrl}); return r.dataUrl; })
+      .catch(e=>{ imgFailed.add(id); throw e; })
+      .finally(()=>{ delete imgInflight[id]; });
+  }
+  return imgInflight[id];
+}
+async function hydrateImages(){
+  const els=[...document.querySelectorAll('[data-img]')]; let i=0;
+  const worker=async()=>{
+    while(i<els.length){
+      const el=els[i++]; const url=el.dataset.img; let src='';
+      try{ src=await getImageSrc(url); }catch(e){ if(e.message!=='OFFLINE') src=url; }
+      if(src&&el.isConnected) el.innerHTML=`<img src="${esc(src)}" alt="" style="width:100%;height:100%;border-radius:10px;object-fit:cover" onerror="this.parentNode.textContent='🔷'">`;
+    }
+  };
+  await Promise.all([worker(),worker(),worker()]);
+}
+
+// ---------- SELLING POINT OTOMATIS ----------
+let spBusy=false;
+async function autoFillSellingPoint(auto){
+  const st=document.getElementById('sp-status'); const ta=document.getElementById('prod-selling');
+  const nama=document.getElementById('prod-nama').value.trim();
+  const brand=document.getElementById('prod-brand').value; const kategori=document.getElementById('prod-kategori').value;
+  if(auto){
+    if(document.getElementById('prod-id').value||ta.value.trim()||nama.length<3||!navigator.onLine) return;
+  } else {
+    if(!needOnline()) return;
+    if(nama.length<3){ toast('Isi nama produk dulu','error'); return; }
+    if(ta.value.trim()&&!confirm('Selling point sudah terisi. Timpa dengan hasil pencarian?')) return;
+  }
+  if(spBusy) return; spBusy=true;
+  st.textContent='🔎 Mencari info produk di internet...';
+  try{
+    const r=await callApi('suggestSellingPoint',{brand,namaProduk:nama,kategori});
+    if(r&&r.text){ ta.value=r.text; st.textContent='✅ Draft dari internet — periksa dulu sebelum simpan'+(r.webSearch?'':' (tanpa pencarian web, mungkin kurang akurat)'); }
+    else st.textContent='Info produk tidak ditemukan — isi manual.';
+  }catch(e){ st.textContent=e.message==='OFFLINE'?'':'⚠️ '+e.message; }
+  finally{ spBusy=false; }
 }
 function renderProducts(){
   const filterEl=document.getElementById('prod-filters');
@@ -842,9 +911,7 @@ function renderProducts(){
   const el=document.getElementById('prod-list');
   if(!list.length){ el.innerHTML='<div class="empty"><div class="em">📦</div><div>Produk tidak ditemukan</div><div class="mt muted">Coba ganti filter atau kata kunci</div></div>'; return; }
   el.innerHTML=list.map(p=>{
-    const img=p.imageUrl
-      ? `<img src="${esc(p.imageUrl)}" class="item-icon" loading="lazy" alt="" onerror="this.outerHTML='<div class=&quot;item-icon&quot;>🔷</div>'">`
-      : `<div class="item-icon">🔷</div>`;
+    const img=`<div class="item-icon"${p.imageUrl?` data-img="${esc(p.imageUrl)}"`:''}>🔷</div>`;
     const sub=[p.kategori,cleanSP(p.sellingPoint).slice(0,50)].filter(x=>x&&x!=='-').join(' · ');
     return `<div class="item" onclick="openProductModal('${esc(p.id)}')">
       ${img}
@@ -855,6 +922,7 @@ function renderProducts(){
       <div class="item-price">${fmtRpShort(p.harga)}</div>
     </div>`;
   }).join('');
+  hydrateImages();
 }
 function setProdFilter(brand){ prodFilterBrand=brand; renderProducts(); }
 
@@ -865,6 +933,7 @@ function fillSelect(id,type,emptyLabel){
 
 function openProductModal(id){
   document.getElementById('img-preview').style.display='none'; document.getElementById('img-status').textContent=''; pendingImageBase64=null;
+  document.getElementById('sp-status').textContent='';
   document.getElementById('prod-img-file').value='';
   fillSelect('prod-brand','brand'); fillSelect('prod-kategori','kategori');
   if(id){
@@ -874,7 +943,7 @@ function openProductModal(id){
     document.getElementById('prod-nama').value=p.namaProduk||''; document.getElementById('prod-kategori').value=p.kategori||'';
     document.getElementById('prod-harga').value=p.harga||''; document.getElementById('prod-selling').value=cleanSP(p.sellingPoint);
     document.getElementById('prod-img-url').value=p.imageUrl||'';
-    if(p.imageUrl){ document.getElementById('img-preview').src=p.imageUrl; document.getElementById('img-preview').style.display='block'; }
+    if(p.imageUrl){ getImageSrc(p.imageUrl).catch(()=>p.imageUrl).then(src=>{ if(src){ const pv=document.getElementById('img-preview'); pv.src=src; pv.style.display='block'; } }); }
     document.getElementById('prod-delete-btn').style.display='block';
   } else {
     document.getElementById('prod-modal-title').textContent='Tambah Produk Baru'; document.getElementById('prod-id').value='';
@@ -915,7 +984,7 @@ async function saveProduct(){
 
   if(navigator.onLine){
     try{
-      if(pendingImageBase64){ toast('⏳ Mengunggah foto ke Drive...'); document.getElementById('img-status').textContent='Mengunggah ke Drive...'; const res=await callApi('uploadImage',{base64:pendingImageBase64,mimeType:'image/jpeg',filename:'prod_'+Date.now()+'.jpg'}); imageUrl=res.url; }
+      if(pendingImageBase64){ toast('⏳ Mengunggah foto ke Drive...'); document.getElementById('img-status').textContent='Mengunggah ke Drive...'; const res=await callApi('uploadImage',{base64:pendingImageBase64,mimeType:'image/jpeg',filename:'prod_'+Date.now()+'.jpg'}); imageUrl=res.url; const nid=driveIdFromUrl(res.url); if(nid) await idbPut('meta',{key:'img:'+nid,val:'data:image/jpeg;base64,'+pendingImageBase64}); }
       await callApi('updateProduct',{id:id||null,brand,namaProduk,kategori,harga,sellingPoint,imageUrl});
       await syncAll(true);
       toast('✅ Produk tersimpan','success');
