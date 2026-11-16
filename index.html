@@ -251,7 +251,7 @@ textarea{resize:vertical;min-height:80px}
     <button class="btn secondary mt" onclick="exportCSV()" style="background:rgba(34,197,94,0.1);color:var(--green);border-color:rgba(34,197,94,0.3)">📥 Download Laporan Bulan Ini (CSV)</button>
     <button class="btn secondary mt" onclick="exportBackup()">📥 Backup JSON (Semua Data)</button>
     <button class="btn secondary mt" onclick="resetToken()">🔑 Ganti Kode Akses</button>
-    <div class="muted mt" style="font-size:11px">Versi 4.4 · ESTrack</div>
+    <div class="muted mt" style="font-size:11px">Versi 4.5 · ESTrack</div>
   </div>
 </section>
 
@@ -373,7 +373,6 @@ textarea{resize:vertical;min-height:80px}
       <div class="field">
         <label>Foto Produk (Opsional)</label>
         <input type="file" id="prod-img-file" accept="image/png, image/jpeg" onchange="handleImageUpload(event)">
-        <button type="button" class="btn secondary sm mt" onclick="autoFillProductImage()">✨ Cari Gambar Otomatis</button>
         <img id="img-preview" src="" alt="Preview">
         <div class="muted" id="img-status" style="margin-top:5px"></div>
       </div>
@@ -481,14 +480,15 @@ async function loadLocal(){
   const settings=await idbGet('meta','settings'); state.settings=settings&&settings.val?settings.val:{};
   if(state.masterData.length===0){ ['Electrolux','LG','Toshiba','Samsung','Sharp','Polytron','Lain-lain'].forEach(b=>state.masterData.push({id:uuid(),type:'brand',value:b})); ['Mesin Cuci','TV','Lemari Es','AC','Lain-lain'].forEach(c=>state.masterData.push({id:uuid(),type:'kategori',value:c})); }
   if(state.templates.length===0){ state.templates.push({id:uuid(),kategori:'Umum',judul:'Sapaan Awal',pesan:'Halo Kak {nama}, saya dari Electronic Square Sukabumi. Ada yang bisa saya bantu? 😊'}); }
-  updateReminderBadge();
+  _logos=null; updateReminderBadge();
 }
 
 function updateReminderBadge(){ const belumFU=state.customers.filter(c=>c.statusFollowUp!=='sudah').length; const badge=document.getElementById('nav-badge-cust'); if(belumFU>0){ badge.textContent=belumFU>99?'99+':belumFU; badge.style.display='block'; } else badge.style.display='none'; }
 
 // SYNC
 let syncing=false;
-async function syncAll(silent=false){
+let lastSync=0;
+async function syncAll(silent=false,force=false){
   if(syncing||!navigator.onLine) return; syncing=true; updateSyncDot();
   try{
     const [unS,unC,unF,unP]=await Promise.all(['sales','customers','followup','products'].map(async n=>(await idbAll(n)).filter(x=>!x._synced)));
@@ -496,7 +496,10 @@ async function syncAll(silent=false){
       await callApi('syncBatch',{sales:unS,customers:unC,followup:unF,products:unP});
       await Promise.all([ idbBulkPut('sales',unS.map(x=>({...x,_synced:true}))), idbBulkPut('customers',unC.map(x=>({...x,_synced:true}))), idbBulkPut('followup',unF.map(x=>({...x,_synced:true}))), idbBulkPut('products',unP.map(x=>({...x,_synced:true}))) ]);
     }
-    const data=await callApi('getAll');
+    const verRec=await idbGet('meta','dataVer'); const since=(!force&&verRec&&verRec.val)?verRec.val:'';
+    const data=await callApi('getAll',since?{since}:{});
+    lastSync=Date.now();
+    if(data&&data.unchanged){ if(!silent) toast('✅ Data sudah terbaru','success'); return; }
     const mapped={
       sales:(data.sales||[]).filter(s=>s.id).map(s=>({...s,_synced:true,qty:Number(s.qty),harga:Number(s.harga),total:Number(s.total),isElectrolux:String(s.isElectrolux).toUpperCase()==='TRUE'||s.isElectrolux===true})),
       customers:(data.customers||[]).filter(c=>c.id).map(c=>({...c,noHP:String(c.noHP||''),_synced:true,sudahBeliElectrolux:String(c.sudahBeliElectrolux).toUpperCase()==='TRUE'||c.sudahBeliElectrolux===true})),
@@ -507,6 +510,7 @@ async function syncAll(silent=false){
       templates:(data.templates||[]).filter(t=>t.id).map(t=>({...t,_synced:true}))
     };
     await Promise.all([ replaceStore('sales',mapped.sales,true), replaceStore('customers',mapped.customers,true), replaceStore('products',mapped.products,true), replaceStore('followup',mapped.followup,true), replaceStore('targets',mapped.targets,false), replaceStore('masterData',mapped.masterData,false), replaceStore('templates',mapped.templates,false) ]);
+    if(data.ver) await idbPut('meta',{key:'dataVer',val:String(data.ver)});
     await loadLocal();
     if(!silent) toast('✅ Sinkronisasi berhasil','success');
     setTimeout(()=>{ refreshUI(); },300);
@@ -539,14 +543,16 @@ function renderDashboard(){
 
 function renderHistory(){
   const bulan=currentMonth(); const searchInput=document.getElementById('dash-search-tx'); const searchTx=searchInput?searchInput.value.toLowerCase().trim():''; const titleHist=document.getElementById('dash-history-title'); let mySales=[];
-  if(searchTx.length>0){ titleHist.textContent='Hasil Pencarian: "'+searchTx+'"'; mySales=state.sales.filter(s=>{ const matchBrand=(s.brand||'').toLowerCase().includes(searchTx), matchProduk=(s.produk||'').toLowerCase().includes(searchTx); let matchCust=false; if(s.customerId){ const cust=state.customers.find(c=>String(c.id)===String(s.customerId)); if(cust){ matchCust=(cust.nama||'').toLowerCase().includes(searchTx)||String(cust.noHP||'').includes(searchTx); } } return matchBrand||matchProduk||matchCust; }); }
+  const custMap0=new Map(state.customers.map(c=>[String(c.id),c]));
+  if(searchTx.length>0){ titleHist.textContent='Hasil Pencarian: "'+searchTx+'"'; mySales=state.sales.filter(s=>{ const matchBrand=(s.brand||'').toLowerCase().includes(searchTx), matchProduk=(s.produk||'').toLowerCase().includes(searchTx); let matchCust=false; if(s.customerId){ const cust=custMap0.get(String(s.customerId)); if(cust){ matchCust=(cust.nama||'').toLowerCase().includes(searchTx)||String(cust.noHP||'').includes(searchTx); } } return matchBrand||matchProduk||matchCust; }); }
   else if(showAllMonths){ titleHist.textContent='Semua Transaksi (Semua Bulan)'; mySales=state.sales.slice(); }
   else { titleHist.textContent='Riwayat Transaksi Bulan Ini'; mySales=state.sales.filter(s=>getMonthKey(s.tanggal)===bulan); }
   mySales.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const custMap=new Map(state.customers.map(c=>[String(c.id),c]));
   const histEl=document.getElementById('dash-history');
   if(mySales.length===0){ histEl.innerHTML=`<div class="muted text-center" style="padding:20px">${searchTx?'Data tidak ditemukan.':'Belum ada transaksi bulan ini'}</div>`; if(!searchTx&&!showAllMonths&&state.sales.length>0){ histEl.innerHTML+=`<button class="btn secondary sm mt" onclick="showAllMonths=true;renderDashboard();" style="margin:10px auto;display:block;">Tampilkan Semua Transaksi (Lintas Bulan)</button>`; } return; }
   const shown=mySales.slice(0,histLimit);
-  histEl.innerHTML=shown.map(s=>{ let custName=''; if(s.customerId){ const c=state.customers.find(x=>String(x.id)===String(s.customerId)); if(c) custName=c.nama; } return `<div class="item"><div class="item-body"><div class="item-title">${esc(s.produk)} ${brandLogo(s.brand)}</div><div class="item-sub">${esc(s.brand)} · ${esc(s.tanggal)} · Qty: ${s.qty} ${custName?'· 👤 '+esc(custName):''}</div></div><div class="item-price" style="margin-right:5px">${fmtRpShort(s.total)}</div><button class="icon-btn edit" onclick="openEditSaleModal('${esc(s.id)}')">✏️</button><button class="icon-btn del" onclick="deleteSale('${esc(s.id)}')">🗑️</button></div>`; }).join('');
+  histEl.innerHTML=shown.map(s=>{ let custName=''; if(s.customerId){ const c=custMap.get(String(s.customerId)); if(c) custName=c.nama; } return `<div class="item"><div class="item-body"><div class="item-title">${esc(s.produk)} ${brandLogo(s.brand)}</div><div class="item-sub">${esc(s.brand)} · ${esc(s.tanggal)} · Qty: ${s.qty} ${custName?'· 👤 '+esc(custName):''}</div></div><div class="item-price" style="margin-right:5px">${fmtRpShort(s.total)}</div><button class="icon-btn edit" onclick="openEditSaleModal('${esc(s.id)}')">✏️</button><button class="icon-btn del" onclick="deleteSale('${esc(s.id)}')">🗑️</button></div>`; }).join('');
   if(mySales.length>histLimit){ histEl.innerHTML+=`<button class="btn secondary sm mt" onclick="histLimit+=50;renderHistory()" style="margin:10px auto;display:block;">Muat lagi (${mySales.length-histLimit} lagi)</button>`; }
 }
 
@@ -563,14 +569,77 @@ function drawChart(){
   line('total','#FFD700'); line('elec','#1E90FF');
 }
 
-// PRODUK & LOGO (DIPERBARUI)
+// ---------- GAMBAR (Drive -> disimpan di HP) ----------
+const imgInflight={}, imgFailed=new Set();
+function driveIdFromUrl(u){ const s=String(u||''); const m=s.match(/[?&]id=([\w-]+)/)||s.match(/\/d\/([\w-]+)/); return m?m[1]:''; }
+async function getImageSrc(url){
+  const id=driveIdFromUrl(url);
+  if(!id) return url||'';
+  const cached=await idbGet('meta','img:'+id);
+  if(cached&&cached.val) return cached.val;
+  if(imgFailed.has(id)) throw new Error('gagal');
+  if(!navigator.onLine) throw new Error('OFFLINE');
+  if(!imgInflight[id]){
+    imgInflight[id]=callApi('getImage',{id})
+      .then(async r=>{ await idbPut('meta',{key:'img:'+id,val:r.dataUrl}); return r.dataUrl; })
+      .catch(e=>{ imgFailed.add(id); throw e; })
+      .finally(()=>{ delete imgInflight[id]; });
+  }
+  return imgInflight[id];
+}
+const logoSrc={};
+async function hydrateImages(){
+  const els=[...document.querySelectorAll('[data-img]:not([data-hyd]),[data-logo]:not([data-hyd])')];
+  els.forEach(e=>e.setAttribute('data-hyd','1'));
+  let i=0;
+  const worker=async()=>{
+    while(i<els.length){
+      const el=els[i++]; if(!el.isConnected) continue;
+      const isLogo=el.hasAttribute('data-logo'); const url=isLogo?el.dataset.logo:el.dataset.img; let src='';
+      try{ src=await getImageSrc(url); }catch(e){ if(e.message!=='OFFLINE') src=url; }
+      if(!src||!el.isConnected) continue;
+      if(isLogo){ logoSrc[url]=src; el.classList.remove('nologo'); el.removeAttribute('style'); el.innerHTML=`<img src="${esc(src)}" alt="" onerror="this.parentNode.classList.add('nologo');this.remove()">`; }
+      else el.innerHTML=`<img src="${esc(src)}" alt="" style="width:100%;height:100%;border-radius:10px;object-fit:cover" onerror="this.parentNode.textContent='🔷'">`;
+    }
+  };
+  await Promise.all([worker(),worker(),worker()]);
+}
+// Jalankan otomatis setiap ada gambar/logo baru di layar (tidak perlu dipanggil manual)
+let _hydT=null;
+new MutationObserver(()=>{ clearTimeout(_hydT); _hydT=setTimeout(()=>{ if(document.querySelector('[data-img]:not([data-hyd]),[data-logo]:not([data-hyd])')) hydrateImages(); },60); }).observe(document.body,{childList:true,subtree:true});
+
+// ---------- SELLING POINT OTOMATIS ----------
+let spBusy=false;
+async function autoFillSellingPoint(auto){
+  const st=document.getElementById('sp-status'); const ta=document.getElementById('prod-selling');
+  const nama=document.getElementById('prod-nama').value.trim();
+  const brand=document.getElementById('prod-brand').value; const kategori=document.getElementById('prod-kategori').value;
+  if(auto){
+    if(document.getElementById('prod-id').value||ta.value.trim()||nama.length<3||!navigator.onLine) return;
+  } else {
+    if(!needOnline()) return;
+    if(nama.length<3){ toast('Isi nama produk dulu','error'); return; }
+    if(ta.value.trim()&&!confirm('Selling point sudah terisi. Timpa dengan hasil pencarian?')) return;
+  }
+  if(spBusy) return; spBusy=true;
+  st.textContent='🔎 Mencari info produk di internet...';
+  try{
+    const r=await callApi('suggestSellingPoint',{brand,namaProduk:nama,kategori});
+    if(r&&r.text){ ta.value=r.text; st.textContent='✅ Draft dari internet — periksa dulu sebelum simpan'+(r.webSearch?'':' (tanpa pencarian web, mungkin kurang akurat)'); }
+    else st.textContent='Info produk tidak ditemukan — isi manual.';
+  }catch(e){ st.textContent=e.message==='OFFLINE'?'':'⚠️ '+e.message; }
+  finally{ spBusy=false; }
+}
+
+// PRODUK & LOGO
 function cleanSP(s){ return String(s||'').replace(/^[\s\-–•·]+/,'').trim(); }
 let _logos=null;
-function getBrandLogos(){ 
-  if(!_logos){ try{ _logos=JSON.parse(localStorage.getItem('estrack_brand_logos')||'{}'); }catch(e){ _logos={}; } } 
-  // Gabungkan dengan data dari MasterData (jika ada URL dari Sheets)
-  state.masterData.filter(m=>m.type==='brand' && m.imageUrl).forEach(m => { _logos[m.value] = m.imageUrl; });
-  return _logos; 
+function getBrandLogos(){
+  if(!_logos){
+    try{ _logos=JSON.parse(localStorage.getItem('estrack_brand_logos')||'{}'); }catch(e){ _logos={}; }
+    state.masterData.filter(m=>m.type==='brand' && m.imageUrl).forEach(m=>{ _logos[m.value]=m.imageUrl; });
+  }
+  return _logos;
 }
 function setBrandLogos(o){ _logos=o; try{ localStorage.setItem('estrack_brand_logos',JSON.stringify(o)); return true; }catch(e){ toast('Penyimpanan HP penuh','error'); return false; } }
 function brandInitials(n){ const w=String(n).trim().split(/\s+/); return (w.length>1?w[0][0]+w[1][0]:String(n).trim().slice(0,2)).toUpperCase(); }
@@ -579,7 +648,10 @@ function brandLogo(name,edit){
   if(!name) return '';
   const url=getBrandLogos()[name];
   const click=edit?` data-b="${esc(name)}" onclick="editBrandLogo(this.dataset.b)"`:'';
-  if(url) return `<span class="brand-logo" title="${esc(name)}"${click}><img src="${esc(url)}" alt=""></span>`;
+  if(url){
+    if(logoSrc[url]) return `<span class="brand-logo" title="${esc(name)}"${click}><img src="${esc(logoSrc[url])}" alt=""></span>`;
+    return `<span class="brand-logo nologo" data-logo="${esc(url)}" data-mono="${esc(brandInitials(name))}" style="--h:${brandHue(name)}" title="${esc(name)}"${click}></span>`;
+  }
   return `<span class="brand-logo nologo" data-mono="${esc(brandInitials(name))}" style="--h:${brandHue(name)}" title="${esc(name)}"${click}></span>`;
 }
 
@@ -591,6 +663,7 @@ function editBrandLogo(name){
     // Hapus URL di MasterData lokal
     const m = state.masterData.find(x=>x.type==='brand' && x.value===name);
     if(m) { m.imageUrl = ''; idbPut('masterData', m); }
+    if(navigator.onLine) callApi('clearBrandLogo',{brandName:name}).catch(()=>{});
     renderMasterData(); toast('Logo dihapus'); return;
   }
   const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
@@ -614,6 +687,7 @@ function editBrandLogo(name){
         try {
           const res = await callApi('uploadBrandLogo', { brandName: name, base64: base64 });
           if(res && res.url){
+            logoSrc[res.url]='data:image/png;base64,'+base64;
             const l={...getBrandLogos()}; l[name]=res.url;
             setBrandLogos(l);
             // Simpan URL di MasterData lokal
@@ -652,8 +726,8 @@ function fillSelect(id,type,emptyLabel){ const sel=document.getElementById(id); 
 function openProductModal(id){
   document.getElementById('img-preview').style.display='none'; document.getElementById('img-status').textContent=''; pendingImageBase64=null; document.getElementById('sp-status').textContent=''; document.getElementById('prod-img-file').value='';
   fillSelect('prod-brand','brand'); fillSelect('prod-kategori','kategori');
-  if(id){ const p=state.products.find(x=>String(x.id)===String(id)); if(!p) return; document.getElementById('prod-modal-title').textContent='Edit Produk'; document.getElementById('prod-id').value=p.id; document.getElementById('prod-brand').value=p.brand||'Electrolux'; document.getElementById('prod-nama').value=p.namaProduk||''; document.getElementById('prod-kategori').value=p.kategori||''; document.getElementById('prod-harga').value=p.harga||''; document.getElementById('prod-selling').value=cleanSP(p.sellingPoint); document.getElementById('prod-img-url').value=p.imageUrl||''; if(p.imageUrl){ getImageSrc(p.imageUrl).catch(()=>p.imageUrl).then(src=>{ if(src){ const pv=document.getElementById('img-preview'); pv.src=src; pv.style.display='block'; } }); } document.getElementById('prod-delete-btn').style.display='block'; }
-  else { document.getElementById('prod-modal-title').textContent='Tambah Produk Baru'; document.getElementById('prod-id').value=''; document.getElementById('prod-brand').value='Electrolux'; document.getElementById('prod-nama').value=''; document.getElementById('prod-harga').value=''; document.getElementById('prod-selling').value=''; document.getElementById('prod-img-url').value=''; document.getElementById('prod-delete-btn').style.display='none'; }
+  if(id){ const p=state.products.find(x=>String(x.id)===String(id)); if(!p) return; document.getElementById('prod-modal-title').textContent='Edit Produk'; document.getElementById('prod-id').value=p.id; document.getElementById('prod-brand').value=p.brand||'Electrolux'; document.getElementById('prod-nama').value=p.namaProduk||''; document.getElementById('prod-kategori').value=p.kategori||''; document.getElementById('prod-harga').value=p.harga||''; document.getElementById('prod-selling').value=cleanSP(p.sellingPoint); document.getElementById('sp-status').textContent=''; document.getElementById('prod-img-url').value=p.imageUrl||''; if(p.imageUrl){ getImageSrc(p.imageUrl).catch(()=>p.imageUrl).then(src=>{ if(src){ const pv=document.getElementById('img-preview'); pv.src=src; pv.style.display='block'; } }); } document.getElementById('prod-delete-btn').style.display='block'; }
+  else { document.getElementById('sp-status').textContent=''; document.getElementById('prod-modal-title').textContent='Tambah Produk Baru'; document.getElementById('prod-id').value=''; document.getElementById('prod-brand').value='Electrolux'; document.getElementById('prod-nama').value=''; document.getElementById('prod-harga').value=''; document.getElementById('prod-selling').value=''; document.getElementById('prod-img-url').value=''; document.getElementById('prod-delete-btn').style.display='none'; }
   openModal('modal-product');
 }
 
@@ -691,7 +765,7 @@ function renderMasterData(){ const mk=type=>state.masterData.filter(m=>m.type===
 async function addMaster(type){ if(!needOnline()) return; const inputId=type==='brand'?'new-brand':'new-kategori'; const val=document.getElementById(inputId).value.trim(); if(!val) return; if(state.masterData.find(m=>m.type===type&&m.value.toLowerCase()===val.toLowerCase())){ toast('Data sudah ada','error'); return; } try{ const r=await callApi('saveMaster',{type,value:val}); if(r&&r.duplicate){ toast('Data sudah ada di server','error'); return; } }catch(e){ toast('Gagal sync: '+e.message,'error'); return; } document.getElementById(inputId).value=''; await syncAll(true); toast('✅ Ditambahkan'); }
 async function delMaster(id){ if(!needOnline()) return; if(!confirm('Hapus item ini?')) return; try{ await callApi('deleteMaster',{id}); }catch(e){ toast('Gagal hapus: '+e.message,'error'); return; } await idbDel('masterData',id); await loadLocal(); renderMasterData(); toast('🗑️ Dihapus'); }
 async function saveTarget(){ if(!needOnline()) return; const bulan=document.getElementById('set-bulan').value; const tE=Number(document.getElementById('set-target-elec').value)||0; const tT=Number(document.getElementById('set-target-toko').value)||0; if(!bulan||tE<1||tT<1){toast('Isi target dengan benar','error');return;} try{ await callApi('saveTarget',{bulan,targetElectrolux:tE,targetToko:tT}); }catch(e){toast('⚠️ '+e.message,'error');return;} await syncAll(true); renderSettings(); toast('✅ Target tersimpan','success'); }
-async function manualSync(){ if(!navigator.onLine){toast('Tidak ada koneksi','error');return;} toast('🔄 Mensinkronisasi...'); await syncAll(false); renderSettings(); }
+async function manualSync(){ if(!navigator.onLine){toast('Tidak ada koneksi','error');return;} toast('🔄 Mensinkronisasi...'); await syncAll(false,true); renderSettings(); }
 function exportBackup(){ const backup={exportedAt:new Date().toISOString(),data:state}; const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='estrack-backup-'+todayStr()+'.json'; a.click(); toast('📥 Backup didownload','success'); }
 function exportCSV() { const bulan=currentMonth(); const mySales=state.sales.filter(s=>getMonthKey(s.tanggal)===bulan); if(!mySales.length){ toast('Tidak ada data penjualan bulan ini','error'); return; } let csv="Tanggal,Brand,Produk,Kategori,Qty,Harga,Total,Nama Customer,No HP,Catatan\n"; mySales.forEach(s=>{ let custName=""; let custHp=""; if(s.customerId){ const c=state.customers.find(x=>String(x.id)===String(s.customerId)); if(c){ custName=c.nama||""; custHp=c.noHP||""; } } const escapeCSV=(str)=>`"${String(str||'').replace(/"/g, '""')}"`; csv+=`${s.tanggal},${escapeCSV(s.brand)},${escapeCSV(s.produk)},${escapeCSV(s.kategori)},${s.qty},${s.harga},${s.total},${escapeCSV(custName)},${escapeCSV(custHp)},${escapeCSV(s.catatan)}\n`; }); const blob=new Blob(["\uFEFF"+csv],{type:'text/csv;charset=utf-8;'}); const link=document.createElement("a"); const url=URL.createObjectURL(blob); link.setAttribute("href", url); link.setAttribute("download", `Laporan_ESTrack_${bulan}.csv`); link.style.visibility='hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); toast('📥 Laporan CSV berhasil didownload','success'); }
 function openModal(id){document.getElementById(id).classList.add('open');}
@@ -712,6 +786,7 @@ function removeCartItem(index){ currentCart.splice(index,1); renderCart(); }
 async function saveSale(){ const tanggal=document.getElementById('sale-tanggal').value||todayStr(); const custNama=document.getElementById('sale-cust-nama').value.trim(); const custHp=document.getElementById('sale-cust-hp').value.trim(); const custAlamat=document.getElementById('sale-cust-alamat').value.trim(); const sudahElec=document.getElementById('sale-sudah-elec').checked; const catatan=document.getElementById('sale-catatan').value.trim(); const saveToCatalog=document.getElementById('sale-save-catalog').checked; if(currentCart.length===0){ toast('Keranjang belanja masih kosong','error'); return; } const orderId='SQ-'+new Date().getTime().toString().slice(-6); const namaSales='Sales 1'; let customerId=''; if(custNama && custHp){ const normPhone=normalizePhone(custHp); let existing=state.customers.find(c=>normalizePhone(c.noHP)===normPhone); if(existing){ customerId=existing.id; existing.statusFollowUp=sudahElec?'sudah':'belum'; existing.sudahBeliElectrolux=sudahElec||existing.sudahBeliElectrolux; existing._synced=false; await idbPut('customers',existing); } else { customerId=uuid(); await idbPut('customers',{id:customerId,nama:custNama,noHP:normPhone,alamat:custAlamat,brandDiminati:currentCart[0].brand,produkDiminati:currentCart[0].produk,statusFollowUp:sudahElec?'sudah':'belum',terakhirFollowUp:'',sudahBeliElectrolux:sudahElec,createdAt:new Date().toISOString(),_synced:false}); } } const newSales=currentCart.map(item=>({ id:uuid(),orderId:orderId,namaSales:namaSales,tanggal,brand:item.brand,produk:item.produk,kategori:item.kategori,qty:item.qty,harga:item.harga,total:item.harga*item.qty,customerId,isElectrolux:item.isElectrolux,catatan,statusPembayaran:'Pending',metodePembayaran:'',createdAt:new Date().toISOString(),_synced:false })); if(saveToCatalog){ const newProds=[]; currentCart.forEach(item=>{ const exists=state.products.find(p=>p.brand.toLowerCase()===item.brand.toLowerCase()&&p.namaProduk.toLowerCase()===item.produk.toLowerCase()); if(!exists){ newProds.push({ id:uuid(),brand:item.brand,namaProduk:item.produk,kategori:item.kategori,harga:item.harga,sellingPoint:'',imageUrl:'',updatedAt:new Date().toISOString(),_synced:false }); } }); if(newProds.length){ await idbBulkPut('products',newProds); toast('✅ Produk baru ditambahkan ke Katalog'); } } await idbBulkPut('sales',newSales); await loadLocal(); closeModal('modal-sale'); toast(navigator.onLine?'✅ Pesanan terkirim':'💾 Disimpan offline','success'); refreshUI(); if(navigator.onLine) syncAll(true); }
 function autoFillCustomer(){ const hp=document.getElementById('sale-cust-hp').value; if(!hp) return; const norm=normalizePhone(hp); const c=state.customers.find(x=>normalizePhone(x.noHP)===norm); if(c){ document.getElementById('sale-cust-nama').value=c.nama||''; document.getElementById('sale-cust-alamat').value=c.alamat||''; document.getElementById('sale-sudah-elec').checked=c.sudahBeliElectrolux||false; toast('✅ Data customer terisi otomatis'); } }
 function refreshUI(){ const activeTab=document.querySelector('.tab.active'); if(!activeTab) return; if(activeTab.id==='tab-dashboard'){renderDashboard();drawChart();} if(activeTab.id==='tab-products') renderProducts(); if(activeTab.id==='tab-customers') renderCustomers(); if(activeTab.id==='tab-settings') renderSettings(); }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&navigator.onLine&&Date.now()-lastSync>180000) syncAll(true); });
 window.addEventListener('online',()=>{updateSyncDot();toast('🌐 Online','success');syncAll(true);});
 window.addEventListener('offline',()=>{updateSyncDot();toast('📴 Offline mode','');});
 async function init(){ try{ await openDB(); await loadLocal(); document.getElementById('splash').classList.add('hide'); setTimeout(()=>{const sp=document.getElementById('splash'); if(sp) sp.remove();},400); refreshUI(); updateSyncDot(); if(navigator.onLine) syncAll(true); }catch(e){ console.error(e); document.getElementById('splash').innerHTML='<h1>Error</h1><p>'+e.message+'</p>'; } }
